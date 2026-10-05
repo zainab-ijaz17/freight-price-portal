@@ -6,5 +6,11 @@ applications:
   buildpacks:
     - nodejs_buildpack
   command: node server/index.js
+  services:
+    - freight-portal-db
   env:
     NODE_ENV: production
+    TZ: Asia/Karachi
+    # All-roles test accounts (server/roles.js) for user testing. Remove
+    # before go-live: one person holding every role can approve their own work.
+    ENABLE_TEST_ACCOUNTS: "true"

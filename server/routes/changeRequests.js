@@ -1,7 +1,8 @@
-// Master data change requests: an Administrator proposes adding a vendor,
-// destination or vehicle type, or deleting a vendor or destination; a
-// Rate Approver (never the same person) approves or rejects it. Nothing
-// changes on a rate sheet until it's approved. See app/js/api/changeRequestsApi.js.
+// Master data change requests: an Administrator proposes adding a vendor
+// or deleting a vendor or destination; a Rate Approver (never the same
+// person) approves or rejects it, and nothing changes until it's approved.
+// New destinations and vehicle types (`direct` kinds) are added by a Rate
+// Approver, applied at once and recorded here with status 'applied'. See app/js/api/changeRequestsApi.js.
 const express = require('express');
 const { pool } = require('../db');
 const { withDb, withTransaction } = require('../store');
@@ -29,6 +30,26 @@ function toApi(r) {
   };
 }
 
+// Pending revisions line their worksheet up with the rate sheet by
+// row/column position — changing that sheet's shape now would release
+// rates against the wrong lines.
+function assertSheetNotInPendingRevision(db, vendorId) {
+  if (vendorId && db.pendingRevision?.vendorIds.includes(vendorId)) {
+    throw fail('CR-003', `This vendor is part of revision ${db.pendingRevision.revisionNo}, which is waiting for approval. Release, reject or return that revision first, then make this change.`, { status: 409 });
+  }
+}
+
+// A returned revision's typed-in rates are also keyed by position; drop
+// them for this vendor rather than let them land on the wrong line when
+// it's reopened (the maintainer re-types them at review).
+function dropReturnedOverrides(db, kind, vendorId) {
+  const returned = db.returnedRevision?.draft;
+  if (returned && vendorId) {
+    delete returned.overrides?.[vendorId];
+    if (kind === 'delete_vendor') returned.vendorIds = returned.vendorIds.filter((v) => v !== vendorId);
+  }
+}
+
 // GET /master-data/requests?status=pending
 router.get('/master-data/requests', requireActor, requireRole('Administrator', 'Approver'), handle('loading master data requests', async (req, res) => {
   const { status } = req.query;
@@ -39,11 +60,31 @@ router.get('/master-data/requests', requireActor, requireRole('Administrator', '
 }));
 
 // POST /master-data/requests  { kind, payload, reason }
-router.post('/master-data/requests', requireActor, requireRole('Administrator'), handle('raising the master data request', async (req, res) => {
+router.post('/master-data/requests', requireActor, requireRole('Administrator', 'Approver'), handle('raising the master data request', async (req, res) => {
   const { kind, payload = {}, reason } = req.body || {};
   const spec = kindSpec(kind);
+  const raisedBy = spec.direct ? 'Approver' : 'Administrator';
+  if (req.actor.role !== raisedBy) {
+    throw fail('AUTH-005', `This action needs the ${raisedBy} role. You are signed in as ${req.actor.role}.`, { status: 403 });
+  }
   if (spec.needsReason && !reason?.trim()) {
     throw fail('CR-004', 'Enter a reason for the deletion — the approver needs it to decide.', { field: 'Reason' });
+  }
+  if (spec.direct) {
+    const applied = await withTransaction(async (db, client) => {
+      assertSheetNotInPendingRevision(db, payload.vendorId);
+      spec.validate(db, payload);
+      const summary = spec.summary(db, payload);
+      spec.apply(db, payload);
+      dropReturnedOverrides(db, kind, payload.vendorId);
+      db.auditLog.unshift({ action: 'master_data_added', actor: req.actor, at: new Date().toISOString(), details: { kind, payload } });
+      const { rows } = await client.query(
+        "INSERT INTO change_requests (kind, vendor_id, payload, summary, status, requested_by, decided_by, decided_at) VALUES ($1,$2,$3,$4,'applied',$5,$5,now()) RETURNING *",
+        [kind, payload.vendorId ?? null, JSON.stringify(payload), summary, JSON.stringify(req.actor)]
+      );
+      return rows[0];
+    });
+    return res.json(toApi(applied));
   }
   const created = await withDb(async (db, client) => {
     spec.validate(db, payload);
@@ -85,24 +126,12 @@ router.post('/master-data/requests/:id/approve', requireActor, requireRole('Appr
     if (r.requested_by.employeeId === req.actor.employeeId) {
       throw fail('CR-002', 'You raised this request, so another approver must decide it.', { status: 403 });
     }
-    // Pending revisions line their worksheet up with the rate sheet by
-    // row/column position — changing that sheet's shape now would release
-    // rates against the wrong lines.
-    if (r.vendor_id && db.pendingRevision?.vendorIds.includes(r.vendor_id)) {
-      throw fail('CR-003', `This vendor is part of revision ${db.pendingRevision.revisionNo}, which is waiting for approval. Release, reject or return that revision first, then approve this request.`, { status: 409 });
-    }
+    assertSheetNotInPendingRevision(db, r.vendor_id);
     const spec = kindSpec(r.kind);
     spec.validate(db, r.payload);
     spec.apply(db, r.payload);
 
-    // A returned revision's typed-in rates are also keyed by position;
-    // drop them for this vendor rather than let them land on the wrong
-    // line when it's reopened (the maintainer re-types them at review).
-    const returned = db.returnedRevision?.draft;
-    if (returned && r.vendor_id) {
-      delete returned.overrides?.[r.vendor_id];
-      if (r.kind === 'delete_vendor') returned.vendorIds = returned.vendorIds.filter((v) => v !== r.vendor_id);
-    }
+    dropReturnedOverrides(db, r.kind, r.vendor_id);
 
     db.auditLog.unshift({ action: 'change_request_approved', actor: req.actor, at: new Date().toISOString(), details: { requestId: id, kind: r.kind, payload: r.payload, reason: r.reason } });
     const { rows } = await client.query(

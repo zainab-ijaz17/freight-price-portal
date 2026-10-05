@@ -28,7 +28,7 @@ The letters say which screen or step the error came from; the text after `›` n
 | AUTH-002 | Employee ID or password missing | Enter both |
 | AUTH-003 | Employee ID or password incorrect | Re-enter credentials |
 | AUTH-004 | SuccessFactors unreachable at sign in | Try again shortly |
-| AUTH-005 | Your account lacks the role this action needs | Ask for the role in `server/roles.js` |
+| AUTH-005 | Your account lacks the role this action needs (e.g. only a Rate Approver adds destinations and vehicle types) | Ask for the role in `server/roles.js` |
 | AUTH-006 | Your role was removed while you were signed in | Sign in again |
 | AUTH-007 | A role was already chosen for this session | Log out and sign in to use another role |
 | DSL-001 | Diesel price missing or not above zero | Enter the price |
@@ -68,7 +68,7 @@ The letters say which screen or step the error came from; the text after `›` n
 | MD-014 | Vendor name already exists | Use a different name |
 | CR-001 | Request not found or already decided | Reload |
 | CR-002 | Requester tried to decide their own request | Another approver must decide |
-| CR-003 | Vendor is in a revision waiting for approval | Decide that revision first |
+| CR-003 | Vendor is in a revision waiting for approval (also blocks adding a destination or vehicle type) | Decide that revision first |
 | CR-004 | Reason missing (deletion or rejection) | Enter a reason |
 | CR-005 | Same request already waiting | Wait for the existing one |
 | CR-006 | Unknown request type | Report it (should not happen from the screens) |

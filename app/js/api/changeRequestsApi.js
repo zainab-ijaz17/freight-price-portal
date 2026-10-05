@@ -1,20 +1,22 @@
 import { request } from './client.js';
 
 /**
- * Master data changes that need a Rate Approver's sign-off: an
+ * Master data changes. Most need a Rate Approver's sign-off: an
  * Administrator raises one, a different person with the Approver role
  * approves or rejects it, and only an approved one changes the rate sheet.
+ * add_destination / add_vehicle_type are raised by a Rate Approver instead
+ * and applied at once (status 'applied').
  *
  * kind / payload:
  *   add_vendor         { name, annexure, passThroughPct, roundingRule, validityStart?, validityEnd?,
  *                        firstDestination, firstVehicleType, firstWeight, firstBaseRate }
- *   add_destination    { vendorId, destination, baseRates: (number|'')[] }   // one per vehicle type
- *   add_vehicle_type   { vendorId, vehicleType, weight, baseRates: (number|'')[] }  // one per destination
+ *   add_destination    { vendorId, destination, baseRates: (number|'')[] }   // one per vehicle type, Approver only, applied at once
+ *   add_vehicle_type   { vendorId, vehicleType, weight, baseRates: (number|'')[] }  // one per destination, Approver only, applied at once
  *   delete_vendor      { vendorId }                 // reason required
  *   delete_destination { vendorId, destination }    // reason required
  *
  * Request shape returned by every call:
- *   { id, kind, vendorId, payload, summary, reason, status: 'pending'|'approved'|'rejected',
+ *   { id, kind, vendorId, payload, summary, reason, status: 'pending'|'approved'|'rejected'|'applied',
  *     requestedBy: { employeeId, name }, requestedAt, decidedBy, decidedAt, decisionNote }
  */
 

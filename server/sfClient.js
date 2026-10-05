@@ -27,7 +27,11 @@ async function verifyEmployeeCredentials(employeeId, password) {
   }
 
   if (res.status === 200) return true;
-  if (res.status === 401 || res.status === 403) return false;
+  if (res.status === 401 || res.status === 403) {
+    const body = await res.text().catch(() => '');
+    console.warn(`SF login rejected for ${username}: ${res.status} ${body.slice(0, 300)}`);
+    return false;
+  }
 
   throw new Error(`SAP SuccessFactors login service responded with status ${res.status}.`);
 }

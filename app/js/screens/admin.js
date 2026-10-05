@@ -1,5 +1,6 @@
 import * as adminApi from '../api/adminApi.js';
-import { listRequests, raiseRequest } from '../api/changeRequestsApi.js';
+import { listRequests } from '../api/changeRequestsApi.js';
+import { wireRequestDialog } from '../components/sheetAddDialogs.js';
 import {
   withAsyncState, escapeHtml, toast, toastError, openDialog, closeDialog, trimNum, formatDateTime,
   isValidDisplayDate, dateField, wireDateFields, codedError, showInlineError, errorBanner,
@@ -8,7 +9,8 @@ import {
 export const title = 'Master Data';
 
 const ROUNDING_RULES = ['Nearest 100', 'Nearest 50', 'None'];
-const STATUS_TAG = { pending: 'tag-warning', approved: 'tag-positive', rejected: 'tag-negative' };
+const STATUS_TAG = { pending: 'tag-warning', approved: 'tag-positive', applied: 'tag-positive', rejected: 'tag-negative' };
+const STATUS_LABEL = { pending: 'Waiting for approval', approved: 'Approved', applied: 'Added', rejected: 'Rejected' };
 
 export function mount(container) {
   const controller = new AbortController();
@@ -31,7 +33,7 @@ function render(container, vendors, requests, keepVendorId) {
   container.innerHTML = `
     <div class="screen-medium">
       <h3 style="margin-bottom:3px">Master data</h3>
-      <p class="muted" style="font-size:13px">Agreement terms and base rates save as you edit. New or deleted vendors, destinations and vehicle types are sent to a Rate Approver and only take effect once approved.</p>
+      <p class="muted" style="font-size:13px">Agreement terms and base rates save as you edit. New vendors and deletions are sent to a Rate Approver and only take effect once approved. New destinations and vehicle types are added by the Rate Approver.</p>
 
       <div class="spread" style="margin-top:20px">
         <div class="hd">Vendors &amp; agreements</div>
@@ -54,7 +56,7 @@ function render(container, vendors, requests, keepVendorId) {
       </div>
       <div id="sheet-body" style="margin-top:16px"></div>
 
-      <div class="hd" style="margin-top:38px">Requests sent for approval</div>
+      <div class="hd" style="margin-top:38px">Master data changes</div>
       <div id="request-list" style="margin-top:10px"></div>
     </div>
   `;
@@ -189,10 +191,6 @@ function renderSheet(container, vendorId, sheet, requests, reload, reloadSheet) 
       </tbody>
     </table>
     </div>
-    <div class="row-gap" style="margin-top:14px">
-      <button class="btn btn-secondary" id="add-dest-btn">Request new destination</button>
-      <button class="btn btn-secondary" id="add-vehicle-btn">Request new vehicle type</button>
-    </div>
   `;
 
   async function saveRow(tr) {
@@ -223,9 +221,6 @@ function renderSheet(container, vendorId, sheet, requests, reload, reloadSheet) 
       onDone: reload,
     });
   });
-
-  container.querySelector('#add-dest-btn').addEventListener('click', () => openAddDestinationDialog(vendorId, sheet, reload));
-  container.querySelector('#add-vehicle-btn').addEventListener('click', () => openAddVehicleTypeDialog(vendorId, sheet, reload));
 }
 
 function renderRequestList(container, requests, vendors) {
@@ -242,41 +237,13 @@ function renderRequestList(container, requests, vendors) {
             <td class="num">${r.id}</td>
             <td>${escapeHtml(r.summary)}${r.reason ? `<div class="muted" style="font-size:12px">Reason: ${escapeHtml(r.reason)}</div>` : ''}</td>
             <td class="num" style="white-space:nowrap">${escapeHtml(formatDateTime(r.requestedAt))}<div class="muted" style="font-size:12px">${escapeHtml(r.requestedBy?.name || '')}</div></td>
-            <td><span class="tag ${STATUS_TAG[r.status] || 'tag-neutral'}">${escapeHtml(r.status === 'pending' ? 'Waiting for approval' : r.status[0].toUpperCase() + r.status.slice(1))}</span></td>
+            <td><span class="tag ${STATUS_TAG[r.status] || 'tag-neutral'}">${escapeHtml(STATUS_LABEL[r.status] || r.status)}</span></td>
             <td style="font-size:12.5px">${r.decidedAt ? `${escapeHtml(r.decidedBy?.name || '')} · <span class="num">${escapeHtml(formatDateTime(r.decidedAt))}</span>${r.decisionNote ? `<div class="muted">${escapeHtml(r.decisionNote)}</div>` : ''}` : '<span class="muted">—</span>'}</td>
           </tr>
         `).join('')}
       </tbody>
     </table>
   `;
-}
-
-// Shared wiring for every "Request …" dialog: collects the payload, sends
-// it, and shows the server's coded error inline if it's refused.
-function wireRequestDialog({ kind, collect, errorId, onDone, successText }) {
-  document.getElementById('dlg-cancel').addEventListener('click', closeDialog);
-  const confirmBtn = document.getElementById('dlg-confirm');
-  confirmBtn.addEventListener('click', async () => {
-    const errorEl = document.getElementById(errorId);
-    errorEl.hidden = true;
-    let collected;
-    try {
-      collected = collect();
-    } catch (err) {
-      showInlineError(errorEl, err);
-      return;
-    }
-    confirmBtn.disabled = true;
-    try {
-      const created = await raiseRequest(kind, collected.payload, collected.reason);
-      closeDialog();
-      toast(`Request #${created.id} sent to the Rate Approver. ${successText}`, 'success', 6000);
-      onDone();
-    } catch (err) {
-      showInlineError(errorEl, err);
-      confirmBtn.disabled = false;
-    }
-  });
 }
 
 const APPROVAL_NOTE = '<div class="dialog-body" style="font-size:12.5px;opacity:.7">This is sent to a Rate Approver. Nothing changes until they approve it; you will be notified either way.</div>';
@@ -330,74 +297,6 @@ function openAddVendorDialog(onDone) {
         },
       };
     },
-  });
-}
-
-function openAddDestinationDialog(vendorId, sheet, onDone) {
-  openDialog(`
-    <div class="dialog-title">Request new destination · ${escapeHtml(sheet.title)}</div>
-    ${APPROVAL_NOTE}
-    <div class="field"><label for="ad-dest">Destination</label><input class="input" id="ad-dest"></div>
-    ${sheet.cols.map((c, i) => `
-      <div class="field"><label for="ad-rate-${i}">Base rate · ${escapeHtml(c)} <span class="muted">· optional</span></label><input class="input num" id="ad-rate-${i}" type="number" min="0" step="1"></div>
-    `).join('')}
-    <div id="ad-error" class="inline-error" hidden></div>
-    <div class="dialog-actions">
-      <button class="btn btn-secondary" id="dlg-cancel">Cancel</button>
-      <button class="btn btn-primary" id="dlg-confirm">Send for approval</button>
-    </div>
-  `);
-  wireRequestDialog({
-    kind: 'add_destination',
-    errorId: 'ad-error',
-    onDone,
-    successText: 'The destination is added to the rate sheet once approved.',
-    collect: () => ({
-      payload: {
-        vendorId,
-        destination: document.getElementById('ad-dest').value,
-        baseRates: sheet.cols.map((_, i) => document.getElementById(`ad-rate-${i}`).value),
-      },
-    }),
-  });
-}
-
-function openAddVehicleTypeDialog(vendorId, sheet, onDone) {
-  openDialog(`
-    <div class="dialog-title">Request new vehicle type · ${escapeHtml(sheet.title)}</div>
-    ${APPROVAL_NOTE}
-    <div class="grid-2">
-      <div class="field"><label for="avt-name">Vehicle type</label><input class="input" id="avt-name" placeholder="e.g. 22ft Container"></div>
-      <div class="field"><label for="avt-weight">Payload / weight</label><input class="input" id="avt-weight" placeholder="e.g. 25 Ton"></div>
-    </div>
-    <div class="hd" style="margin-top:6px">Base rate per destination <span style="text-transform:none;letter-spacing:0">· optional — leave blank to enter at the next revision</span></div>
-    <div style="max-height:40vh;overflow-y:auto;margin-top:8px;padding-right:4px">
-      ${sheet.rows.map((row, i) => `
-        <div class="row-gap" style="justify-content:space-between;margin-bottom:6px">
-          <label for="avt-rate-${i}" style="font-size:13px;flex:1">${escapeHtml(row[0])}</label>
-          <input class="input num" id="avt-rate-${i}" type="number" min="0" step="1" style="width:130px">
-        </div>
-      `).join('')}
-    </div>
-    <div id="avt-error" class="inline-error" hidden></div>
-    <div class="dialog-actions">
-      <button class="btn btn-secondary" id="dlg-cancel">Cancel</button>
-      <button class="btn btn-primary" id="dlg-confirm">Send for approval</button>
-    </div>
-  `);
-  wireRequestDialog({
-    kind: 'add_vehicle_type',
-    errorId: 'avt-error',
-    onDone,
-    successText: 'The new column is added to the rate sheet once approved.',
-    collect: () => ({
-      payload: {
-        vendorId,
-        vehicleType: document.getElementById('avt-name').value,
-        weight: document.getElementById('avt-weight').value,
-        baseRates: sheet.rows.map((_, i) => document.getElementById(`avt-rate-${i}`).value),
-      },
-    }),
   });
 }
 

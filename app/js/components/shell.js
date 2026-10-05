@@ -11,7 +11,7 @@ const NAV_ITEMS = [
   { path: '/vendors', num: '2', label: 'Select vendors', roles: ['Rate Maintainer'] },
   { path: '/review', num: '3', label: 'Review before / after', roles: ['Rate Maintainer'] },
   { path: '/approve', label: 'Approve and release', roles: ['Approver'] },
-  { path: '/master-data-requests', label: 'Master data requests', roles: ['Approver'] },
+  { path: '/master-data-requests', label: 'Master data', roles: ['Approver'] },
   { path: '/lookup', label: 'Rate lookup', roles: ['Rate Maintainer', 'Approver', 'Display'] },
   { path: '/admin', label: 'Master data', roles: ['Administrator'] },
 ];

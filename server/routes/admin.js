@@ -47,7 +47,7 @@ router.patch('/admin/vendors/:vendorId/agreement', requireActor, requireRole('Ad
 }));
 
 // GET /admin/vendors/:vendorId/rate-sheet — see app/js/api/adminApi.js
-router.get('/admin/vendors/:vendorId/rate-sheet', requireActor, requireRole('Administrator'), handle('loading the rate sheet', async (req, res) => {
+router.get('/admin/vendors/:vendorId/rate-sheet', requireActor, requireRole('Administrator', 'Approver'), handle('loading the rate sheet', async (req, res) => {
   res.json(await withDb(async (db) => {
     vendorById(db, req.params.vendorId);
     return db.rateSheets[req.params.vendorId];

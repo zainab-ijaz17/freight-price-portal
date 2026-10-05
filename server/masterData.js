@@ -1,5 +1,7 @@
-// Structural master data changes — the ones that need a Rate Approver's
-// sign-off (see routes/changeRequests.js). Each kind has a `validate`
+// Structural master data changes (see routes/changeRequests.js). Most are
+// raised by an Administrator and need a Rate Approver's sign-off; `direct`
+// kinds (new destinations and vehicle types) are the Rate Approver's own to
+// add, and take effect as soon as they're added. Each kind has a `validate`
 // (run when the request is raised, and again when it's approved, since
 // the data may have moved on in between) and an `apply` that performs it
 // against the in-memory `db` inside the approval's transaction.
@@ -96,6 +98,7 @@ const KINDS = {
   },
 
   add_destination: {
+    direct: true,
     validate(db, p) {
       const { sheet } = sheetFor(db, p.vendorId);
       if (!p.destination?.trim()) throw fail('MD-007', 'Enter the destination name.', { field: 'Destination' });
@@ -115,6 +118,7 @@ const KINDS = {
   },
 
   add_vehicle_type: {
+    direct: true,
     validate(db, p) {
       const { sheet } = sheetFor(db, p.vendorId);
       if (!p.vehicleType?.trim()) throw fail('MD-011', 'Enter the vehicle type name.', { field: 'Vehicle type' });

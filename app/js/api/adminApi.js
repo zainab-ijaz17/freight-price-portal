@@ -1,7 +1,7 @@
 import { request } from './client.js';
 
 // Adding/deleting vendors, destinations and vehicle types isn't here —
-// those are requests a Rate Approver signs off, see changeRequestsApi.js.
+// see changeRequestsApi.js.
 
 /**
  * Full vendor + agreement records for master-data maintenance
@@ -27,8 +27,9 @@ export async function updateAgreement(vendorId, patch) {
 }
 
 /**
- * A vendor's live rate sheet, so the admin screen can show which
- * destinations/vehicle types already exist before adding to them.
+ * A vendor's live rate sheet, so the Administrator and Rate Approver
+ * screens can show which destinations/vehicle types already exist
+ * (Administrator or Approver).
  *
  * Real endpoint: GET {API_BASE_URL}/admin/vendors/{vendorId}/rate-sheet
  * Response: { title, annexure, cols: string[], weights: string[], rows: [[dest, ...rates]] }
