@@ -6,8 +6,9 @@ applications:
   buildpacks:
     - nodejs_buildpack
   command: node server/index.js
-  services:
-    - freight-portal-db
+  # Database: DATABASE_URL, set on the app with `cf set-env` (never here — this
+  # file is committed). To use a BTP PostgreSQL instance instead, create it and
+  # add `services: [freight-portal-db]`; a bound service wins over DATABASE_URL.
   env:
     NODE_ENV: production
     TZ: Asia/Karachi
