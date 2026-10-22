@@ -1,7 +1,10 @@
 import { simulateRevision, submitForApproval } from '../api/revisionsApi.js';
-import { getDraft, clearDraft, updateDraft, ensureDraftLoaded } from '../revisionDraft.js';
+import { getDraft, getDraftId, saveNow, clearDraft, updateDraft, ensureDraftLoaded } from '../revisionDraft.js';
 import { returnedNoticeHtml } from '../components/returnedNotice.js';
-import { withAsyncState, escapeHtml, money, pct, toast, toastError, downloadCsv } from '../ui.js';
+import { revisionSheetHtml } from '../components/revisionPrint.js';
+import { printDocument } from '../components/printSheet.js';
+import { getSession } from '../session.js';
+import { withAsyncState, escapeHtml, money, pct, toast, toastError, downloadCsv, formatDate } from '../ui.js';
 
 export const title = 'Review Before / After';
 
@@ -139,7 +142,8 @@ function render(container, draft, sim, overrides, reload, preferredVendorId) {
       <div class="end" style="margin-top:22px">
         <button class="btn btn-secondary" id="back-btn">Back</button>
         <button class="btn btn-secondary" id="export-btn">Export to Excel</button>
-        <button class="btn btn-primary" id="submit-btn" ${sim.blocked ? 'disabled' : ''}>Submit for Approval</button>
+        <button class="btn btn-secondary" id="print-btn">Print sheets</button>
+        <button class="btn btn-primary" id="submit-btn" ${sim.blocked ? 'disabled' : ''}>Submit ${sim.vendors.length === 1 ? 'for Approval' : `${sim.vendors.length} Sheets for Approval`}</button>
       </div>
     </div>
   `;
@@ -200,13 +204,17 @@ function render(container, draft, sim, overrides, reload, preferredVendorId) {
 
   container.querySelector('#back-btn').addEventListener('click', () => { location.hash = '#/vendors'; });
   container.querySelector('#export-btn').addEventListener('click', () => exportCsv(sim));
+  container.querySelector('#print-btn').addEventListener('click', () => printDraftSheets(draft, sim));
 
   const submitBtn = container.querySelector('#submit-btn');
+  const submitLabel = submitBtn.textContent;
   submitBtn.addEventListener('click', async () => {
     submitBtn.disabled = true;
     submitBtn.textContent = 'Submitting…';
     try {
+      await saveNow(); // so the draft has its id, and is removed on submit
       const result = await submitForApproval({
+        draftId: getDraftId(),
         dieselPrice: draft.dieselPrice,
         dieselEffectiveDate: draft.dieselEffectiveDate,
         effectiveDate: draft.effectiveDate,
@@ -218,14 +226,38 @@ function render(container, draft, sim, overrides, reload, preferredVendorId) {
         overrides,
       });
       await clearDraft();
-      toast(`Revision ${result.revisionNo} submitted for approval.`, 'success');
+      toast(`Revision ${result.revisionNo}: ${result.sheetCount === 1 ? 'rate sheet' : `${result.sheetCount} rate sheets`} submitted for approval. The approvers have been notified.`, 'success', 6000);
       location.hash = '#/diesel-price';
     } catch (err) {
       toastError(err, 'Submission failed.');
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Submit for Approval';
+      submitBtn.textContent = submitLabel;
     }
   });
+}
+
+// One printed sheet per selected vendor, marked as a draft — for checking
+// on paper, or attaching to the file, before it's submitted.
+function printDraftSheets(draft, sim) {
+  const session = getSession();
+  const html = sim.vendors.map((v) => revisionSheetHtml({
+    revisionNo: sim.revisionNo,
+    vendorName: v.name,
+    worksheet: sim.worksheets[v.id],
+    dieselPrice: draft.dieselPrice,
+    previousDieselPrice: draft.previousDieselPrice,
+    dieselEffectiveDate: draft.dieselEffectiveDate,
+    effectiveDate: sim.effectiveDate,
+    upliftPct: v.upliftPct,
+    upliftBasis: v.upliftBasis,
+    source: draft.source,
+    submittedBy: { employeeId: session.employeeId, name: session.name },
+    submittedOn: formatDate(new Date()),
+    notificationFileName: draft.notificationFileName,
+    remarks: draft.remarks,
+    status: 'Draft — not yet submitted for approval',
+  })).join('');
+  printDocument(`Revision ${sim.revisionNo} - draft rate sheets`, html);
 }
 
 // Every selected vendor's before/after lines, one row per rate line.

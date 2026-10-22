@@ -3,10 +3,10 @@ import { listRequests } from '../api/changeRequestsApi.js';
 import { wireRequestDialog } from '../components/sheetAddDialogs.js';
 import {
   withAsyncState, escapeHtml, toast, toastError, openDialog, closeDialog, trimNum, formatDateTime,
-  isValidDisplayDate, dateField, wireDateFields, codedError, showInlineError, errorBanner,
+  isValidDisplayDate, dateField, wireDateFields, codedError, showInlineError, errorBanner, personLabel,
 } from '../ui.js';
 
-export const title = 'Master Data';
+export const title = 'Vendors & Agreements';
 
 const ROUNDING_RULES = ['Nearest 100', 'Nearest 50', 'None'];
 const STATUS_TAG = { pending: 'tag-warning', approved: 'tag-positive', applied: 'tag-positive', rejected: 'tag-negative' };
@@ -32,8 +32,8 @@ function pendingFor(requests, kind, match) {
 function render(container, vendors, requests, keepVendorId) {
   container.innerHTML = `
     <div class="screen-medium">
-      <h3 style="margin-bottom:3px">Master data</h3>
-      <p class="muted" style="font-size:13px">Agreement terms and base rates save as you edit. New vendors and deletions are sent to a Rate Approver and only take effect once approved. New destinations and vehicle types are added by the Rate Approver.</p>
+      <h3 style="margin-bottom:3px">Vendors &amp; agreements</h3>
+      <p class="muted" style="font-size:13px">Agreement terms and base rates save as you edit. New vendors and deletions you request here go to another Rate Approver and only take effect once they approve them. New destinations and vehicle types are added under "Master data requests".</p>
 
       <div class="spread" style="margin-top:20px">
         <div class="hd">Vendors &amp; agreements</div>
@@ -129,7 +129,7 @@ function render(container, vendors, requests, keepVendorId) {
     const v = vendors.find((x) => x.id === id);
     openDeleteDialog({
       title: `Request deletion of ${v.name}`,
-      body: `Removes the vendor and its rate sheet (${v.rateLineCount} rate lines) from the portal once a Rate Approver approves it. Past revisions stay on record.`,
+      body: `Removes the vendor and its rate sheet (${v.rateLineCount} rate lines) from the portal once another Rate Approver approves it. Past revisions stay on record.`,
       kind: 'delete_vendor',
       payload: { vendorId: id },
       onDone: reload,
@@ -215,7 +215,7 @@ function renderSheet(container, vendorId, sheet, requests, reload, reloadSheet) 
     const destination = e.target.closest('tr').dataset.dest;
     openDeleteDialog({
       title: `Request deletion of "${destination}"`,
-      body: `Removes this destination and its ${sheet.cols.length} rate(s) from ${escapeHtml(sheet.title)} once a Rate Approver approves it. Past revisions stay on record.`,
+      body: `Removes this destination and its ${sheet.cols.length} rate(s) from ${escapeHtml(sheet.title)} once another Rate Approver approves it. Past revisions stay on record.`,
       kind: 'delete_destination',
       payload: { vendorId, destination },
       onDone: reload,
@@ -236,9 +236,9 @@ function renderRequestList(container, requests, vendors) {
           <tr>
             <td class="num">${r.id}</td>
             <td>${escapeHtml(r.summary)}${r.reason ? `<div class="muted" style="font-size:12px">Reason: ${escapeHtml(r.reason)}</div>` : ''}</td>
-            <td class="num" style="white-space:nowrap">${escapeHtml(formatDateTime(r.requestedAt))}<div class="muted" style="font-size:12px">${escapeHtml(r.requestedBy?.name || '')}</div></td>
+            <td class="num" style="white-space:nowrap">${escapeHtml(formatDateTime(r.requestedAt))}<div class="muted" style="font-size:12px">${escapeHtml(personLabel(r.requestedBy))}</div></td>
             <td><span class="tag ${STATUS_TAG[r.status] || 'tag-neutral'}">${escapeHtml(STATUS_LABEL[r.status] || r.status)}</span></td>
-            <td style="font-size:12.5px">${r.decidedAt ? `${escapeHtml(r.decidedBy?.name || '')} · <span class="num">${escapeHtml(formatDateTime(r.decidedAt))}</span>${r.decisionNote ? `<div class="muted">${escapeHtml(r.decisionNote)}</div>` : ''}` : '<span class="muted">—</span>'}</td>
+            <td style="font-size:12.5px">${r.decidedAt ? `${escapeHtml(personLabel(r.decidedBy))} · <span class="num">${escapeHtml(formatDateTime(r.decidedAt))}</span>${r.decisionNote ? `<div class="muted">${escapeHtml(r.decisionNote)}</div>` : ''}` : '<span class="muted">—</span>'}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -246,7 +246,7 @@ function renderRequestList(container, requests, vendors) {
   `;
 }
 
-const APPROVAL_NOTE = '<div class="dialog-body" style="font-size:12.5px;opacity:.7">This is sent to a Rate Approver. Nothing changes until they approve it; you will be notified either way.</div>';
+const APPROVAL_NOTE = '<div class="dialog-body" style="font-size:12.5px;opacity:.7">This is sent to another Rate Approver (you cannot decide your own request). Nothing changes until they approve it; you will be notified either way.</div>';
 
 function openAddVendorDialog(onDone) {
   openDialog(`

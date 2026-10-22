@@ -1,6 +1,7 @@
 import { getSession, hasRole, clearSession } from '../session.js';
 import { escapeHtml, initials } from '../ui.js';
 import { mountAlerts, stopAlerts } from './alerts.js';
+import { mountDieselCard } from './dieselCard.js';
 import { logout } from '../api/authApi.js';
 import { forgetDraft } from '../revisionDraft.js';
 
@@ -11,12 +12,14 @@ const NAV_ITEMS = [
   { path: '/vendors', num: '2', label: 'Select vendors', roles: ['Rate Maintainer'] },
   { path: '/review', num: '3', label: 'Review before / after', roles: ['Rate Maintainer'] },
   { path: '/approve', label: 'Approve and release', roles: ['Approver'] },
-  { path: '/master-data-requests', label: 'Master data', roles: ['Approver'] },
+  { path: '/master-data-requests', label: 'Master data requests', roles: ['Approver'] },
+  { path: '/admin', label: 'Vendors & agreements', roles: ['Approver'] },
   { path: '/lookup', label: 'Rate lookup', roles: ['Rate Maintainer', 'Approver', 'Display'] },
-  { path: '/admin', label: 'Master data', roles: ['Administrator'] },
 ];
 
-export function renderShell(appRoot, { activePath, screenTitle, roleLabel }) {
+// `showDieselCard`: this is the role's home screen, which opens with the
+// current diesel price.
+export function renderShell(appRoot, { activePath, screenTitle, roleLabel, showDieselCard = false }) {
   const session = getSession();
   const items = NAV_ITEMS.filter((item) => item.roles.some((r) => hasRole(r)));
 
@@ -42,12 +45,15 @@ export function renderShell(appRoot, { activePath, screenTitle, roleLabel }) {
           <span class="tag tag-neutral">${escapeHtml(roleLabel || '')}</span>
           <div id="alerts-slot"></div>
           <div class="row-gap">
-            <span style="font-size:13px">${escapeHtml(session?.name || '')}</span>
+            <span style="font-size:13px">${escapeHtml(session?.name || '')}${session && session.name !== session.employeeId ? ` <span class="muted num">· ${escapeHtml(session.employeeId)}</span>` : ''}</span>
             <span class="avatar">${escapeHtml(session ? initials(session.name) : '')}</span>
           </div>
           <button class="btn btn-ghost" data-action="logout">Log out</button>
         </header>
-        <div class="screen" id="screen-root"></div>
+        <div class="screen">
+          <div id="home-banner" hidden></div>
+          <div id="screen-root"></div>
+        </div>
       </main>
     </div>
   `;
@@ -63,4 +69,5 @@ export function renderShell(appRoot, { activePath, screenTitle, roleLabel }) {
     location.hash = '#/login';
   });
   mountAlerts(appRoot.querySelector('#alerts-slot'));
+  if (showDieselCard) mountDieselCard(appRoot.querySelector('#home-banner'));
 }

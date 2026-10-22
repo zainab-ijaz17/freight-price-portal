@@ -30,6 +30,14 @@ export function trimNum(n, maxDecimals = 2) {
   return Number(n).toLocaleString('en-US', { maximumFractionDigits: maxDecimals, useGrouping: false });
 }
 
+// "Imran Nisar (20005702)" for a { employeeId, name } — or just the
+// number when no name is known for them.
+export function personLabel(p) {
+  if (!p) return '';
+  if (!p.employeeId) return p.name || '';
+  return p.name && p.name !== p.employeeId ? `${p.name} (${p.employeeId})` : p.employeeId;
+}
+
 export function initials(name) {
   return name.trim().split(/\s+/).slice(-1)[0].slice(0, 2).toUpperCase();
 }

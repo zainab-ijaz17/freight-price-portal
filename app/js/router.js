@@ -39,7 +39,6 @@ export function defaultRouteForSession() {
   if (!session) return '#/login';
   if (session.role === 'Approver') return '#/approve';
   if (session.role === 'Display') return '#/lookup';
-  if (session.role === 'Administrator') return '#/admin';
   return '#/diesel-price';
 }
 
@@ -80,7 +79,12 @@ async function renderCurrentRoute() {
     return;
   }
 
-  renderShell(appRoot, { activePath: route.path, screenTitle: route.screen.title, roleLabel: getSession().role });
+  renderShell(appRoot, {
+    activePath: route.path,
+    screenTitle: route.screen.title,
+    roleLabel: getSession().role,
+    showDieselCard: `#${route.path}` === defaultRouteForSession(),
+  });
   const screenRoot = document.getElementById('screen-root');
   currentCleanup = await route.screen.mount(screenRoot, ctx);
 }

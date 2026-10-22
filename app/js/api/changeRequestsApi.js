@@ -1,11 +1,10 @@
 import { request } from './client.js';
 
 /**
- * Master data changes. Most need a Rate Approver's sign-off: an
- * Administrator raises one, a different person with the Approver role
- * approves or rejects it, and only an approved one changes the rate sheet.
- * add_destination / add_vehicle_type are raised by a Rate Approver instead
- * and applied at once (status 'applied').
+ * Master data changes. Most need a second Rate Approver's sign-off: one
+ * approver raises it, a different person with the Approver role approves
+ * or rejects it, and only an approved one changes the rate sheet.
+ * add_destination / add_vehicle_type are applied at once (status 'applied').
  *
  * kind / payload:
  *   add_vendor         { name, annexure, passThroughPct, roundingRule, validityStart?, validityEnd?,

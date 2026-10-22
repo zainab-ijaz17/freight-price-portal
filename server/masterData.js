@@ -1,5 +1,5 @@
 // Structural master data changes (see routes/changeRequests.js). Most are
-// raised by an Administrator and need a Rate Approver's sign-off; `direct`
+// raised by one Rate Approver and need another's sign-off; `direct`
 // kinds (new destinations and vehicle types) are the Rate Approver's own to
 // add, and take effect as soon as they're added. Each kind has a `validate`
 // (run when the request is raised, and again when it's approved, since

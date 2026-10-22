@@ -21,17 +21,20 @@ export async function mount(container) {
 }
 
 function render(container, draft, vendors) {
-  // Filtered to vendors that still exist — one could have been deleted
-  // since this draft (or the returned revision it came from) was made.
+  // A vendor whose rate sheet is already waiting for approval can't go
+  // into another revision until that one is decided.
+  const available = vendors.filter((v) => v.pendingRevisionNo == null);
+  // Filtered to vendors that still exist and are free — one could have
+  // been deleted, or submitted elsewhere, since this draft was made.
   const selected = new Set(
-    (draft.vendorIds.length ? draft.vendorIds : vendors.map((v) => v.id)).filter((id) => vendors.some((v) => v.id === id))
+    (draft.vendorIds.length ? draft.vendorIds : available.map((v) => v.id)).filter((id) => available.some((v) => v.id === id))
   );
 
   container.innerHTML = `
     <div style="max-width:1180px">
       ${draft.returnedFrom ? `<div style="margin-bottom:22px">${returnedNoticeHtml(draft.returnedFrom, { compact: true })}</div>` : ''}
       <h3 style="margin-bottom:3px">Select vendors</h3>
-      <p class="muted" style="font-size:13px">Only checked contracts are simulated and repriced.</p>
+      <p class="muted" style="font-size:13px">Only checked contracts are simulated and repriced. Each vendor's rate sheet goes to the approver as its own item, so they can be approved separately.</p>
 
       <div class="field" style="width:220px;margin-top:18px">
         <label for="rate-effective-from">Rates effective from</label>
@@ -64,12 +67,14 @@ function render(container, draft, vendors) {
   wireDateFields(container);
 
   function rowHtml(v) {
+    const waiting = v.pendingRevisionNo != null;
     return `
-      <tr>
-        <td><input type="checkbox" class="vendor-check" data-id="${v.id}" ${selected.has(v.id) ? 'checked' : ''}></td>
+      <tr${waiting ? ' style="opacity:.55"' : ''}>
+        <td><input type="checkbox" class="vendor-check" data-id="${v.id}" ${selected.has(v.id) ? 'checked' : ''} ${waiting ? 'disabled' : ''}></td>
         <td>
           <span>${escapeHtml(v.name)}</span>
           ${v.stale ? '<span class="tag tag-outline" style="margin-left:8px;font-size:10px">not revised 90+ days</span>' : ''}
+          ${waiting ? `<span class="tag tag-warning" style="margin-left:8px;font-size:10px">waiting for approval · revision ${v.pendingRevisionNo}</span>` : ''}
         </td>
         <td class="num">${escapeHtml(v.annexure)}</td>
         <td class="num" style="text-align:right">${trimNum(v.passThroughPct)}</td>
@@ -84,8 +89,8 @@ function render(container, draft, vendors) {
     const selVendors = vendors.filter((v) => selected.has(v.id));
     const lines = selVendors.reduce((sum, v) => sum + v.rateLineCount, 0);
     summaryEl.textContent = `${selVendors.length} vendors · ${lines} rate lines selected`;
-    toggleAll.checked = selVendors.length === vendors.length;
-    toggleAll.indeterminate = selVendors.length > 0 && selVendors.length < vendors.length;
+    toggleAll.checked = available.length > 0 && selVendors.length === available.length;
+    toggleAll.indeterminate = selVendors.length > 0 && selVendors.length < available.length;
   }
 
   rowsEl.innerHTML = vendors.map(rowHtml).join('');
@@ -99,7 +104,7 @@ function render(container, draft, vendors) {
   });
 
   toggleAll.addEventListener('change', () => {
-    if (toggleAll.checked) vendors.forEach((v) => selected.add(v.id));
+    if (toggleAll.checked) available.forEach((v) => selected.add(v.id));
     else selected.clear();
     rowsEl.innerHTML = vendors.map(rowHtml).join('');
     updateSummary();

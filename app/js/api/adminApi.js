@@ -5,7 +5,7 @@ import { request } from './client.js';
 
 /**
  * Full vendor + agreement records for master-data maintenance
- * (Administrator only — same shape as vendorsApi.getVendors()).
+ * (Approver only — same shape as vendorsApi.getVendors()).
  *
  * Real endpoint: GET {API_BASE_URL}/admin/vendors
  */
@@ -27,9 +27,8 @@ export async function updateAgreement(vendorId, patch) {
 }
 
 /**
- * A vendor's live rate sheet, so the Administrator and Rate Approver
- * screens can show which destinations/vehicle types already exist
- * (Administrator or Approver).
+ * A vendor's live rate sheet, so the Rate Approver's screens can show
+ * which destinations/vehicle types already exist (Approver).
  *
  * Real endpoint: GET {API_BASE_URL}/admin/vendors/{vendorId}/rate-sheet
  * Response: { title, annexure, cols: string[], weights: string[], rows: [[dest, ...rates]] }

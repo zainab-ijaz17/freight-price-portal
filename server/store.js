@@ -1,7 +1,7 @@
 // Postgres-backed persistence for the portal's own data (vendors, rate
 // sheets, revisions, workflow state, audit log). Routes work against the
 // same plain-object shape the app has always used — { vendors, rateSheets,
-// revisions, currentRevisionNo, pendingRevision, returnedRevision,
+// revisions, currentRevisionNo, pendingSheets, returnedSheets,
 // rateSnapshots, auditLog }
 // — loadDb/saveDb just translate that to/from real tables, so
 // rateEngine.js's calculation logic didn't need to change at all.
@@ -59,6 +59,11 @@ async function withTransaction(fn) {
     await client.query('SELECT pg_advisory_xact_lock(727271)');
     const db = await loadDb(client);
     const baseline = rowsOf(db);
+    if (db.convertedLegacyState) {
+      // Make sure the converted lists, and the cleared old keys, are written.
+      ['pending_sheets', 'returned_sheets', 'pending_revision', 'returned_revision']
+        .forEach((key) => baseline.app_state.delete(JSON.stringify([key])));
+    }
     const result = await fn(db, client);
     await saveDb(client, db, baseline);
     await client.query('COMMIT');
@@ -114,11 +119,12 @@ async function loadDb(client) {
   const rateSnapshots = {};
   snapshotsRes.rows.forEach((s) => {
     rateSnapshots[s.vendor_id] = rateSnapshots[s.vendor_id] || {};
-    rateSnapshots[s.vendor_id][s.revision_no] = { rows: s.rows, auditRows: s.audit_rows };
+    rateSnapshots[s.vendor_id][s.revision_no] = { rows: s.rows, auditRows: s.audit_rows, approvedBy: s.approved_by, approvedOn: s.approved_on };
   });
 
   const state = {};
   stateRes.rows.forEach((r) => { state[r.key] = r.value; });
+  const vendorName = (id) => vendors.find((v) => v.id === id)?.name || id;
 
   const auditLog = auditRes.rows.map((a) => ({
     id: a.id, // already stored — only entries without an id are new
@@ -133,13 +139,64 @@ async function loadDb(client) {
     rateSheets,
     revisions,
     currentRevisionNo: state.current_revision_no ?? null,
-    pendingRevision: state.pending_revision ?? null,
-    // The last revision an approver sent back for correction, with their
-    // comments — shown to maintainers until it's resubmitted.
-    returnedRevision: state.returned_revision ?? null,
+    // One entry per vendor rate sheet waiting for approval — each is
+    // approved, rejected or returned on its own (see routes/revisions.js).
+    pendingSheets: state.pending_sheets ?? sheetsFromLegacyPending(state.pending_revision, vendorName),
+    // Sheets an approver sent back for correction, with their comments —
+    // shown to maintainers until they're resubmitted.
+    returnedSheets: state.returned_sheets ?? sheetsFromLegacyReturned(state.returned_revision, vendorName),
     rateSnapshots,
     auditLog,
+    convertedLegacyState: state.pending_revision != null || state.returned_revision != null,
   };
+}
+
+// Before sheets were approved one vendor at a time, a whole revision was
+// pending (or returned) as one object. Anything still waiting in that
+// form is split per vendor the first time it's loaded, and saved that way.
+function sheetsFromLegacyPending(p, vendorName) {
+  if (!p) return [];
+  return p.vendorIds.map((vendorId) => {
+    const sim = p.vendors.find((v) => v.id === vendorId) || {};
+    return {
+      id: `${p.revisionNo}-${vendorId}`,
+      revisionNo: p.revisionNo,
+      vendorId,
+      vendorName: vendorName(vendorId),
+      upliftPct: sim.upliftPct ?? 0,
+      upliftBasis: sim.upliftBasis || '',
+      overallUpliftPct: p.overallUpliftPct,
+      worksheet: p.worksheets[vendorId],
+      overrides: p.overrides?.[vendorId] || {},
+      dieselPrice: p.dieselPrice,
+      dieselEffectiveDate: p.dieselEffectiveDate,
+      effectiveDate: p.effectiveDate,
+      source: p.source,
+      notificationId: p.notificationId,
+      notificationFileName: p.notificationFileName,
+      remarks: p.remarks || '',
+      submittedBy: p.submittedBy,
+      submittedOn: p.submittedOn,
+      submittedAt: null,
+      previousReturn: p.previousReturn || null,
+    };
+  });
+}
+
+function sheetsFromLegacyReturned(r, vendorName) {
+  if (!r) return [];
+  return r.draft.vendorIds.map((vendorId) => ({
+    id: `${r.revisionNo}-${vendorId}`,
+    revisionNo: r.revisionNo,
+    vendorId,
+    vendorName: vendorName(vendorId),
+    reason: r.reason,
+    returnedBy: r.returnedBy,
+    returnedOn: r.returnedOn,
+    submittedBy: r.submittedBy,
+    submittedOn: r.submittedOn,
+    draft: { ...r.draft, vendorIds: [vendorId], overrides: r.draft.overrides?.[vendorId] ? { [vendorId]: r.draft.overrides[vendorId] } : {} },
+  }));
 }
 
 // Each table as { key → row values }, in the column order of TABLES
@@ -149,7 +206,7 @@ const TABLES = {
   vendors: { key: ['id'], cols: ['id', 'name', 'annexure', 'pass_through_pct', 'rounding_rule', 'stale', 'validity_start', 'validity_end'] },
   rate_sheets: { key: ['vendor_id'], cols: ['vendor_id', 'title', 'annexure', 'cols', 'weights', 'rows'] },
   revisions: { key: ['revision_no'], cols: ['revision_no', 'diesel_price', 'effective_date', 'factor', 'approved_by', 'approved_on', 'notification_id'] },
-  rate_snapshots: { key: ['vendor_id', 'revision_no'], cols: ['vendor_id', 'revision_no', 'rows', 'audit_rows'] },
+  rate_snapshots: { key: ['vendor_id', 'revision_no'], cols: ['vendor_id', 'revision_no', 'rows', 'audit_rows', 'approved_by', 'approved_on'] },
   app_state: { key: ['key'], cols: ['key', 'value'] },
 };
 // Parents before children when inserting (a rate sheet needs its vendor),
@@ -174,12 +231,15 @@ function rowsOf(db) {
   }
   for (const [vendorId, byRev] of Object.entries(db.rateSnapshots)) {
     for (const [revNo, snap] of Object.entries(byRev)) {
-      put('rate_snapshots', [vendorId, Number(revNo), snap.rows, snap.auditRows ?? null]);
+      put('rate_snapshots', [vendorId, Number(revNo), snap.rows, snap.auditRows ?? null, snap.approvedBy ?? null, snap.approvedOn ?? null]);
     }
   }
   put('app_state', ['current_revision_no', db.currentRevisionNo]);
-  put('app_state', ['pending_revision', db.pendingRevision]);
-  put('app_state', ['returned_revision', db.returnedRevision ?? null]);
+  put('app_state', ['pending_sheets', db.pendingSheets]);
+  put('app_state', ['returned_sheets', db.returnedSheets]);
+  // Superseded by the two lists above; cleared once converted (loadDb).
+  put('app_state', ['pending_revision', null]);
+  put('app_state', ['returned_revision', null]);
   return tables;
 }
 
@@ -224,4 +284,10 @@ async function saveDb(client, db, baseline) {
   }
 }
 
-module.exports = { ensureSchema, seedIfEmpty, withDb, withTransaction };
+// Run once at startup: a transaction that changes nothing still writes out
+// any state loadDb had to convert from an older format.
+async function migrateState() {
+  await withTransaction(async () => {});
+}
+
+module.exports = { ensureSchema, seedIfEmpty, migrateState, withDb, withTransaction };

@@ -86,7 +86,8 @@ module.exports = {
   rateSheets: RATE_SHEETS,
   revisions: REVISIONS,
   currentRevisionNo: 22,
-  pendingRevision: null,
+  pendingSheets: [],
+  returnedSheets: [],
   rateSnapshots: {},
   auditLog: [],
 };

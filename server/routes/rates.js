@@ -9,6 +9,15 @@ const generalTerms = require('../generalTerms');
 
 const router = express.Router();
 
+// Who released this vendor's sheet in that revision: each vendor's sheet
+// is approved on its own, so it can differ from whoever released the
+// revision's first sheet (revisions.approved_by).
+function approvalOf(db, vendorId, revNo) {
+  const snap = db.rateSnapshots[vendorId]?.[revNo];
+  const rev = db.revisions[revNo];
+  return { approvedBy: snap?.approvedBy || rev.approvedBy, approvedOn: snap?.approvedOn || rev.approvedOn };
+}
+
 // GET /rates/lookup?vendorId=&destination=&vehicleType=&date= — see app/js/api/rateLookupApi.js
 router.get('/rates/lookup', requireActor, handle('looking up the rate', async (req, res) => {
   const { date, vendorId, destination, vehicleType } = req.query;
@@ -36,6 +45,7 @@ router.get('/rates/lookup', requireActor, handle('looking up the rate', async (r
     const revNos = Object.keys(db.revisions).map(Number).sort((a, b) => b - a);
     const nextRevNo = revNos[revNos.indexOf(revNo) - 1];
     const rev = db.revisions[revNo];
+    const approval = approvalOf(db, vendorId, revNo);
     return {
       rate,
       vendorName: v.name,
@@ -45,8 +55,8 @@ router.get('/rates/lookup', requireActor, handle('looking up the rate', async (r
       revisionNo: revNo,
       validFrom: rev.effectiveDate,
       validTo: nextRevNo ? subtractOneDay(db.revisions[nextRevNo].effectiveDate) : 'current',
-      approvedBy: rev.approvedBy,
-      approvedOn: rev.approvedOn,
+      approvedBy: approval.approvedBy,
+      approvedOn: approval.approvedOn,
     };
   });
 
@@ -138,8 +148,7 @@ router.get('/vendors/:vendorId/annexure', requireActor, handle('loading the anne
       revisionNo,
       dieselPrice: rev.dieselPrice,
       effectiveDate: rev.effectiveDate,
-      approvedBy: rev.approvedBy,
-      approvedOn: rev.approvedOn,
+      ...approvalOf(db, vendorId, revisionNo),
       isCurrent: revisionNo === db.currentRevisionNo,
       terms: [...generalTerms.all, ...(generalTerms.byAnnexure[sheet.annexure] || [])],
       rows,

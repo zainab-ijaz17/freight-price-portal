@@ -28,7 +28,7 @@ The letters say which screen or step the error came from; the text after `›` n
 | AUTH-002 | Employee ID or password missing | Enter both |
 | AUTH-003 | Employee ID or password incorrect | Re-enter credentials |
 | AUTH-004 | SuccessFactors unreachable at sign in | Try again shortly |
-| AUTH-005 | Your account lacks the role this action needs (e.g. only a Rate Approver adds destinations and vehicle types) | Ask for the role in `server/roles.js` |
+| AUTH-005 | Your account lacks the role this action needs (e.g. only a Rate Approver edits agreements or adds destinations) | Ask for the role in `server/roles.js` |
 | AUTH-006 | Your role was removed while you were signed in | Sign in again |
 | AUTH-007 | A role was already chosen for this session | Log out and sign in to use another role |
 | DSL-001 | Diesel price missing or not above zero | Enter the price |
@@ -36,6 +36,7 @@ The letters say which screen or step the error came from; the text after `›` n
 | DSL-003 | Effective date earlier than the last confirmed price | Use a later date |
 | DSL-004 | Notification not attached | Attach it and wait for the upload |
 | DSL-005 | Draft could not be saved (empty or malformed) | Re-enter the details and save again |
+| DSL-006 | Saved draft no longer exists (submitted or deleted, maybe on another PC) | Reload the page |
 | UPL-001 | File is not PDF / JPG / PNG | Attach one of those formats |
 | UPL-002 | No file received | Choose the file again |
 | UPL-003 | File over 10 MB | Attach a smaller copy |
@@ -44,14 +45,15 @@ The letters say which screen or step the error came from; the text after `›` n
 | VND-001 | No vendor selected | Tick at least one vendor |
 | VND-002 | "Rates effective from" missing or not DD.MM.YYYY | Correct the date |
 | VND-003 | Vendor not found (possibly deleted) | Reload and reselect |
-| REV-001 | Another revision is already pending approval | Wait for it to be decided |
+| REV-001 | A selected vendor already has a rate sheet waiting for approval | Untick that vendor, or wait until it is decided |
 | REV-002 | Some lines have no rate | Type a rate under "New rates" for the vendors named |
-| APR-001 | Revision no longer pending | Reload — someone already acted on it |
-| APR-002 | Approver is the submitter | Another approver must release it |
+| APR-001 | Rate sheet no longer waiting for approval | Reload — someone already acted on it |
+| APR-002 | Approver submitted one of the selected sheets | Another approver must release it |
 | APR-003 | Confirmation password incorrect | Re-enter your SAP password |
 | APR-004 | Rejection reason missing | Enter a reason |
 | APR-005 | Corrections for a return missing | List what needs to change |
 | APR-006 | SuccessFactors unreachable during approval | Try again shortly |
+| APR-007 | No rate sheet selected | Tick at least one sheet |
 | MD-001 | Pass-through % outside 0–100 | Correct the value |
 | MD-002 | Unknown rounding rule | Pick from the list |
 | MD-003 | Validity date not DD.MM.YYYY | Correct the date |
@@ -66,9 +68,10 @@ The letters say which screen or step the error came from; the text after `›` n
 | MD-012 | Vehicle type already on the rate sheet | Use the existing column |
 | MD-013 | Invalid base rate (negative or not a number) | Enter whole rupees or leave blank |
 | MD-014 | Vendor name already exists | Use a different name |
+| MD-015 | Base rate changed while that vendor's rate sheet waits for approval | Decide the sheet first |
 | CR-001 | Request not found or already decided | Reload |
 | CR-002 | Requester tried to decide their own request | Another approver must decide |
-| CR-003 | Vendor is in a revision waiting for approval (also blocks adding a destination or vehicle type) | Decide that revision first |
+| CR-003 | Vendor has a rate sheet waiting for approval (also blocks adding a destination or vehicle type) | Decide that sheet first |
 | CR-004 | Reason missing (deletion or rejection) | Enter a reason |
 | CR-005 | Same request already waiting | Wait for the existing one |
 | CR-006 | Unknown request type | Report it (should not happen from the screens) |

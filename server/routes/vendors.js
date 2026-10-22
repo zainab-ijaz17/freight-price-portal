@@ -17,6 +17,9 @@ router.get('/vendors', requireActor, handle('loading vendors', async (req, res) 
       ...v,
       rateLineCount: rateLineCount(db, v.id),
       lastRevisedDate: rev.effectiveDate,
+      // Set while this vendor's rate sheet is waiting for approval — it
+      // can't go into another revision until that's decided.
+      pendingRevisionNo: db.pendingSheets.find((s) => s.vendorId === v.id)?.revisionNo ?? null,
     }));
   });
   res.json(result);

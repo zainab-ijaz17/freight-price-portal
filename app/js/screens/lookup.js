@@ -1,5 +1,6 @@
 import { getVendorOptions } from '../api/vendorsApi.js';
 import * as rateLookupApi from '../api/rateLookupApi.js';
+import { printDocument, printSheet, printTable, printTerms, printSignatures } from '../components/printSheet.js';
 import {
   withAsyncState, escapeHtml, money, priceStr, isValidDisplayDate, dateField, wireDateFields,
   codedError, toastError, errorBanner, downloadCsv,
@@ -171,7 +172,7 @@ async function renderAnnexTab(body, vendors) {
 
   let annex = null;
   body.querySelector('#ax-export').addEventListener('click', () => { if (annex) exportAnnexure(annex); });
-  body.querySelector('#ax-print').addEventListener('click', () => window.print());
+  body.querySelector('#ax-print').addEventListener('click', () => { if (annex) printAnnexure(annex); });
 
   async function loadAnnexure() {
     axBody.innerHTML = '<div class="state-block"><div class="spinner"></div></div>';
@@ -226,6 +227,30 @@ function renderAnnexure(container, annex) {
         </ol>
       </div>` : ''}
   `;
+}
+
+// The annexure as it would be attached to the agreement: rates, terms and
+// a signature box for each side.
+function printAnnexure(annex) {
+  const html = printSheet({
+    title: annex.title,
+    subtitle: `Annexure ${annex.annexure} · Revision ${annex.revisionNo}${annex.isCurrent ? ' (current)' : ''}`,
+    meta: [
+      `Freight rates with effect from ${annex.effectiveDate}`,
+      `Based on diesel at PKR ${priceStr(annex.dieselPrice)} per litre`,
+      `Approved by ${annex.approvedBy} on ${annex.approvedOn}`,
+      'All rates in PKR per trip',
+    ],
+    tableHtml: printTable(
+      [['S.No', 'Destination', ...annex.cols.map((c) => ({ text: c, align: 'right' }))]],
+      annex.rows.map((r) => [{ text: r.no, align: 'right' }, r.dest, ...r.cells.map((c) => ({ text: c == null ? '—' : money(c), align: 'right' }))])
+    ),
+    afterHtml: printTerms(annex.terms) + printSignatures([
+      { label: 'For Packages Limited' },
+      { label: `For ${annex.vendorName}` },
+    ]),
+  });
+  printDocument(`${annex.vendorName} - Annexure ${annex.annexure.replace(/\//g, '-')} - Revision ${annex.revisionNo}`, html);
 }
 
 function exportAnnexure(annex) {

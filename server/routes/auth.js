@@ -1,5 +1,6 @@
 const express = require('express');
-const { verifyEmployeeCredentials } = require('../sfClient');
+const { verifyEmployeeCredentials, fetchEmployeeProfile } = require('../sfClient');
+const { rememberEmployee } = require('../directory');
 const { assignmentFor } = require('../roles');
 const { createSession, setActiveRole, endSession } = require('../sessions');
 const { requireActor } = require('../middleware/auth');
@@ -30,10 +31,17 @@ router.post('/login', async (req, res) => {
     return sendError(res, fail('AUTH-003', 'The employee ID or password is incorrect.', { status: 401 }));
   }
 
-  // SuccessFactors' login check has no display-name or role field, so both
-  // come from the roster in roles.js instead. `roles` is usually a single
-  // value; screens/login.js prompts for a choice when there's more than one.
-  const { name, roles } = assignmentFor(employeeId);
+  // The name comes from the employee's SuccessFactors profile, so everyone
+  // appears by name rather than by number; the roster in roles.js is the
+  // fallback if SF won't return it. Roles always come from the roster.
+  // `roles` is usually a single value; screens/login.js prompts for a
+  // choice when there's more than one.
+  const assignment = assignmentFor(employeeId);
+  const { roles } = assignment;
+  const profile = await fetchEmployeeProfile(employeeId, password);
+  const name = profile?.name || assignment.name;
+  await rememberEmployee({ employeeId, name: profile?.name, email: profile?.email })
+    .catch((err) => console.error('Could not save employee profile:', err.message));
   try {
     const { token, activeRole } = await createSession({ employeeId, name, roles });
     res.json({ token, employeeId, name, roles, activeRole });

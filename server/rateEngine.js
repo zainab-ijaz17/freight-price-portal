@@ -66,6 +66,13 @@ function computeWorksheet(db, v, upliftPct, rowOverrides) {
   return { title: sheet.title, annexure: sheet.annexure, cols: sheet.cols, weights: sheet.weights, rows, blocked };
 }
 
+// Each submission is its own revision number, even while sheets from an
+// earlier one are still waiting for approval.
+function nextRevisionNo(db) {
+  const taken = [db.currentRevisionNo, ...Object.keys(db.revisions).map(Number), ...db.pendingSheets.map((s) => s.revisionNo)];
+  return Math.max(...taken) + 1;
+}
+
 function buildSimulation(db, { dieselPrice, effectiveDate, vendorIds, overrides }) {
   const previous = db.revisions[db.currentRevisionNo];
   const overallUpliftPct = ((dieselPrice - previous.dieselPrice) / previous.dieselPrice) * 100;
@@ -83,7 +90,7 @@ function buildSimulation(db, { dieselPrice, effectiveDate, vendorIds, overrides 
   const rateLineTotal = vendorIds.reduce((sum, id) => sum + rateLineCount(db, id), 0);
 
   return {
-    revisionNo: db.currentRevisionNo + 1,
+    revisionNo: nextRevisionNo(db),
     effectiveDate,
     overallUpliftPct,
     vendors: vendors.map((v) => ({ ...v, blocked: worksheets[v.id].blocked })),
@@ -150,6 +157,7 @@ module.exports = {
   rateLineCount,
   roundByRule,
   computeWorksheet,
+  nextRevisionNo,
   buildSimulation,
   parseDMY,
   isValidDMY,

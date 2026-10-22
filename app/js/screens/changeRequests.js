@@ -1,6 +1,6 @@
 // The Rate Approver's master data screen: adding destinations and vehicle
 // types to a vendor's rate sheet (applied at once), and the queue of
-// changes raised by an Administrator — new vendors and deletions.
+// changes raised by another Rate Approver — new vendors and deletions.
 // Approving applies the change immediately; rejecting needs a reason,
 // which goes back to the requester.
 import { listRequests, approveRequest, rejectRequest } from '../api/changeRequestsApi.js';
@@ -10,10 +10,10 @@ import { openAddDestinationDialog, openAddVehicleTypeDialog } from '../component
 import { getSession } from '../session.js';
 import {
   withAsyncState, escapeHtml, money, trimNum, formatDateTime, toast, openDialog, closeDialog,
-  codedError, showInlineError, errorBanner,
+  codedError, showInlineError, errorBanner, personLabel,
 } from '../ui.js';
 
-export const title = 'Master Data';
+export const title = 'Master Data Requests';
 
 const STATUS_TAG = { pending: 'tag-warning', approved: 'tag-positive', applied: 'tag-positive', rejected: 'tag-negative' };
 const STATUS_LABEL = { approved: 'Approved', applied: 'Added', rejected: 'Rejected' };
@@ -77,8 +77,8 @@ function render(container, requests, vendors, keepVendorId) {
 
   container.innerHTML = `
     <div class="screen-medium">
-      <h3 style="margin-bottom:3px">Master data</h3>
-      <p class="muted" style="font-size:13px">Destinations and vehicle types you add here go onto the rate sheet straight away. New vendors and deletions raised by an Administrator take effect only once you approve them. You cannot decide a request you raised yourself.</p>
+      <h3 style="margin-bottom:3px">Master data requests</h3>
+      <p class="muted" style="font-size:13px">Destinations and vehicle types you add here go onto the rate sheet straight away. New vendors and deletions (requested under "Vendors &amp; agreements") take effect only once a Rate Approver other than the one who raised them approves them.</p>
 
       <div class="hd" style="margin-top:22px">Destinations &amp; vehicle types</div>
       <div class="row-gap" style="margin-top:10px;align-items:flex-end;flex-wrap:wrap">
@@ -101,7 +101,7 @@ function render(container, requests, vendors, keepVendorId) {
                 <div style="font-size:15px;margin-top:6px">${escapeHtml(r.summary)}</div>
                 <div style="font-size:12.5px;margin-top:6px;line-height:1.6">${detailsHtml(r, nameOf(r.vendorId))}</div>
                 ${r.reason ? `<div class="notice-quote" style="border-left-color:var(--color-divider);font-size:13px">${escapeHtml(r.reason)}</div>` : ''}
-                <div class="muted" style="font-size:12px;margin-top:8px">Requested by ${escapeHtml(r.requestedBy?.name || '')} · <span class="num">${escapeHtml(formatDateTime(r.requestedAt))}</span></div>
+                <div class="muted" style="font-size:12px;margin-top:8px">Requested by ${escapeHtml(personLabel(r.requestedBy))} · <span class="num">${escapeHtml(formatDateTime(r.requestedAt))}</span></div>
               </div>
               <div class="row-gap" style="flex:none">
                 ${r.requestedBy?.employeeId === session.employeeId
@@ -122,9 +122,9 @@ function render(container, requests, vendors, keepVendorId) {
               <tr>
                 <td class="num">${r.id}</td>
                 <td>${escapeHtml(r.summary)}${r.decisionNote ? `<div class="muted" style="font-size:12px">${escapeHtml(r.decisionNote)}</div>` : ''}</td>
-                <td>${escapeHtml(r.requestedBy?.name || '')}</td>
+                <td>${escapeHtml(personLabel(r.requestedBy))}</td>
                 <td><span class="tag ${STATUS_TAG[r.status] || 'tag-neutral'}">${escapeHtml(STATUS_LABEL[r.status] || r.status)}</span></td>
-                <td style="font-size:12.5px">${escapeHtml(r.decidedBy?.name || '')} · <span class="num">${escapeHtml(formatDateTime(r.decidedAt))}</span></td>
+                <td style="font-size:12.5px">${escapeHtml(personLabel(r.decidedBy))} · <span class="num">${escapeHtml(formatDateTime(r.decidedAt))}</span></td>
               </tr>
             `).join('')}
           </tbody>
