@@ -66,7 +66,7 @@ function inBackground(label, fn) {
   Promise.resolve().then(fn).catch((err) => console.error(`${label} email failed:`, err.message));
 }
 
-const SHEET_COLUMNS = ['Revision', 'Vendor', 'Rate lines', 'Change', 'Rates effective', 'Submitted by'];
+const SHEET_COLUMNS = ['Revision', 'Rate list', 'Rate lines', 'Change', 'Rates effective', 'Submitted by'];
 
 function sheetRow(s) {
   const lines = s.worksheet.rows.length * s.worksheet.cols.length;
@@ -80,7 +80,7 @@ function emailSheetsSubmitted({ revisionNo, sheets, submittedBy }) {
     await sendMail('sheets_submitted', to, compose({
       subject: `Approval needed: Revision ${revisionNo} — ${n} rate sheet${n === 1 ? '' : 's'}`,
       heading: `Revision ${revisionNo} is waiting for your approval`,
-      intro: `${person(submittedBy)} submitted ${n} vendor rate sheet${n === 1 ? '' : 's'} (diesel at PKR ${sheets[0].dieselPrice} per litre). Each sheet can be approved, returned or rejected on its own.`,
+      intro: `${person(submittedBy)} submitted ${n} rate sheet${n === 1 ? '' : 's'} (diesel at PKR ${sheets[0].dieselPrice} per litre). Each sheet can be approved, returned or rejected on its own.`,
       columns: SHEET_COLUMNS,
       rows: sheets.map(sheetRow),
       linkHash: '#/approve',

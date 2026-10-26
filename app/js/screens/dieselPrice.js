@@ -52,7 +52,7 @@ function draftSummary(d) {
   const parts = [];
   parts.push(d.dieselPrice != null ? `PKR ${priceStr(d.dieselPrice)}` : 'No price yet');
   if (d.dieselEffectiveDate) parts.push(`effective ${d.dieselEffectiveDate}`);
-  parts.push(d.vendorIds?.length ? `${d.vendorIds.length} vendor${d.vendorIds.length === 1 ? '' : 's'}` : 'no vendors picked');
+  parts.push(d.vendorIds?.length ? `${d.vendorIds.length} rate list${d.vendorIds.length === 1 ? '' : 's'}` : 'no rate lists picked');
   return parts.join(' · ');
 }
 
@@ -70,7 +70,7 @@ function render(container, ctx) {
         actionsHtml: correcting ? '' : `
           <div class="row-gap" style="margin-top:12px">
             <button class="btn btn-primary" data-reopen="${g.revisionNo}">Revise and resubmit</button>
-            <span class="muted" style="font-size:12px">Opens a new draft from the submission by ${escapeHtml(personLabel(submitter))}, with its figures, attachment and ${g.sheets.length === 1 ? 'vendor' : `${g.sheets.length} vendors`} already filled in.</span>
+            <span class="muted" style="font-size:12px">Opens a new draft from the submission by ${escapeHtml(personLabel(submitter))}, with its figures, attachment and ${g.sheets.length === 1 ? 'rate list' : `${g.sheets.length} rate lists`} already filled in.</span>
           </div>`,
       })}</div>`;
     }).join('')}
@@ -165,7 +165,7 @@ function render(container, ctx) {
         <div style="margin-top:10px">
           ${ctx.queue.length ? `
             <table class="table">
-              <thead><tr><th style="text-align:right">Rev.</th><th>Vendor</th><th>Submitted by</th><th style="text-align:right">On</th></tr></thead>
+              <thead><tr><th style="text-align:right">Rev.</th><th>Rate list</th><th>Submitted by</th><th style="text-align:right">On</th></tr></thead>
               <tbody>
                 ${ctx.queue.map((s) => `
                   <tr>
@@ -176,7 +176,7 @@ function render(container, ctx) {
                   </tr>`).join('')}
               </tbody>
             </table>
-            <p class="muted" style="font-size:12px;margin-top:8px">Each vendor's sheet is approved on its own. A vendor with a sheet waiting can't go into another revision until it's decided.</p>`
+            <p class="muted" style="font-size:12px;margin-top:8px">Each rate list's sheet is approved on its own. A list with a sheet waiting can't go into another revision until it's decided.</p>`
           : '<p class="muted" style="font-size:13px">Nothing is waiting for approval.</p>'}
         </div>
       </div>
@@ -203,7 +203,7 @@ function render(container, ctx) {
     draftStatus.querySelector('#discard-draft').addEventListener('click', () => {
       openDialog(`
         <div class="dialog-title">Discard this draft?</div>
-        <div class="dialog-body">The saved diesel price, vendor selection and any rates you typed in are deleted. This can't be undone.</div>
+        <div class="dialog-body">The saved diesel price, rate list selection and any rates you typed in are deleted. This can't be undone.</div>
         <div class="dialog-actions">
           <button class="btn btn-secondary" id="dlg-cancel">Keep draft</button>
           <button class="btn btn-primary" id="dlg-confirm">Discard draft</button>
@@ -305,7 +305,7 @@ function render(container, ctx) {
       previousEffectiveDate: previous.effectiveDate,
     });
     rerender();
-    toast('Returned sheets reopened as a new draft. Make the corrections, then continue through vendors and review to resubmit.', 'info', 6000);
+    toast('Returned sheets reopened as a new draft. Make the corrections, then continue through rate lists and review to resubmit.', 'info', 6000);
   }));
 
   form.notification.addEventListener('change', async () => {

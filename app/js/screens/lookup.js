@@ -1,9 +1,9 @@
 import { getVendorOptions } from '../api/vendorsApi.js';
 import * as rateLookupApi from '../api/rateLookupApi.js';
-import { printDocument, printSheet, printTable, printTerms, printSignatures } from '../components/printSheet.js';
+import { printDocument, printSheet, printTable, printConditions, printSignatures } from '../components/printSheet.js';
 import {
   withAsyncState, escapeHtml, money, priceStr, isValidDisplayDate, dateField, wireDateFields,
-  codedError, toastError, errorBanner, downloadCsv,
+  codedError, toastError, errorBanner, downloadCsv, fillConditions,
 } from '../ui.js';
 
 export const title = 'Rate Lookup';
@@ -11,7 +11,7 @@ export const title = 'Rate Lookup';
 export function mount(container) {
   const controller = new AbortController();
   withAsyncState(container, getVendorOptions, (vendors) => render(container, vendors), {
-    loadingLabel: 'Loading vendors…',
+    loadingLabel: 'Loading rate lists…',
   });
   return () => controller.abort();
 }
@@ -44,7 +44,7 @@ async function renderLookupTab(body, vendors) {
   body.innerHTML = `
     <div class="grid-4" style="padding:14px 16px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:var(--shadow-sm)">
       <div class="field"><label for="lk-date">Date <span class="muted">· blank = today</span></label>${dateField('lk-date')}</div>
-      <div class="field"><label>Vendor</label>
+      <div class="field"><label>Rate list</label>
         <select class="input" id="lk-vendor">${vendors.map((v) => `<option value="${v.id}">${escapeHtml(v.name)}</option>`).join('')}</select>
       </div>
       <div class="field"><label>Destination</label><input class="input" id="lk-dest" placeholder="Type to search"></div>
@@ -115,7 +115,7 @@ async function renderLookupTab(body, vendors) {
 
 function renderLookupResults(container, rate, history) {
   if (!rate) {
-    container.innerHTML = '<p class="muted">No rate found for that vendor, destination and vehicle type on that date. Check the spelling of the destination, or try another vehicle type.</p>';
+    container.innerHTML = '<p class="muted">No rate found for that rate list, destination and vehicle type on that date. Check the spelling of the destination, or try another vehicle type.</p>';
     return;
   }
   container.innerHTML = `
@@ -124,6 +124,7 @@ function renderLookupResults(container, rate, history) {
         <div class="num pos" style="font-size:44px;line-height:1.05">PKR ${money(rate.rate)}</div>
         <div style="font-size:14px">${escapeHtml(rate.destination)} · ${escapeHtml(rate.vehicleType)} · ${escapeHtml(rate.vendorName)}</div>
         <div class="card-meta" style="font-size:12px">Annexure ${escapeHtml(rate.annexure)} · Revision ${rate.revisionNo}</div>
+        ${rate.transporters?.length ? `<div class="card-meta" style="font-size:12px">Applies to ${escapeHtml(rate.transporters.join(', '))}</div>` : ''}
         <div style="height:1px;background:var(--color-divider);margin:4px 0"></div>
         <div style="font-size:12.5px;color:color-mix(in srgb,var(--color-text) 70%,transparent);line-height:1.6">
           Valid <span class="num">${escapeHtml(rate.validFrom)}</span> – ${rate.validTo === 'current' ? '<span class="pos">current</span>' : `<span class="num">${escapeHtml(rate.validTo)}</span>`}<br>
@@ -154,7 +155,7 @@ function renderLookupResults(container, rate, history) {
 async function renderAnnexTab(body, vendors) {
   body.innerHTML = `
     <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
-      <div class="field" style="width:250px"><label>Vendor</label>
+      <div class="field" style="width:250px"><label>Rate list</label>
         <select class="input" id="ax-vendor">${vendors.map((v) => `<option value="${v.id}">${escapeHtml(v.name)}</option>`).join('')}</select>
       </div>
       <div class="field" style="width:150px"><label>Revision</label><select class="input num" id="ax-revision"></select></div>
@@ -203,6 +204,7 @@ function renderAnnexure(container, annex) {
       <div class="num" style="font-size:13px;color:color-mix(in srgb,var(--color-text) 70%,transparent);margin-top:3px">Annexure ${escapeHtml(annex.annexure)} · Revision ${annex.revisionNo} · w.e.f. ${escapeHtml(annex.effectiveDate)} ${annex.isCurrent ? '<span class="tag tag-positive" style="margin-left:6px">Current</span>' : ''}</div>
       <div class="num" style="font-size:13px;color:color-mix(in srgb,var(--color-text) 70%,transparent)">Based on diesel at PKR ${priceStr(annex.dieselPrice)} per litre</div>
       <div class="num" style="font-size:13px;color:color-mix(in srgb,var(--color-text) 70%,transparent)">Approved by ${escapeHtml(annex.approvedBy)} on ${escapeHtml(annex.approvedOn)}</div>
+      ${annex.transporters?.length ? `<div style="font-size:13px;color:color-mix(in srgb,var(--color-text) 70%,transparent)">Rates applicable to: ${escapeHtml(annex.transporters.join(' · '))}</div>` : ''}
     </div>
     <table class="table" style="margin-top:18px;max-width:820px">
       <thead><tr>
@@ -219,18 +221,19 @@ function renderAnnexure(container, annex) {
         `).join('')}
       </tbody>
     </table>
-    ${annex.terms?.length ? `
+    ${annex.conditions?.length ? `
       <div style="max-width:820px;margin-top:22px">
-        <div class="hd" style="margin-bottom:8px">General terms &amp; conditions</div>
+        <div class="hd" style="margin-bottom:8px">Conditions</div>
         <ol style="margin:0;padding-left:20px;font-size:13px;line-height:1.6">
-          ${annex.terms.map((t) => `<li>${escapeHtml(t)}</li>`).join('')}
+          ${fillConditions(annex.conditions, annex.dieselPrice).map((t) => `<li>${escapeHtml(t)}</li>`).join('')}
         </ol>
       </div>` : ''}
   `;
 }
 
-// The annexure as it would be attached to the agreement: rates, terms and
-// a signature box for each side.
+// The annexure as it would be attached to the agreements: rates, the
+// list's conditions and who it applies to, and a signature box for
+// Packages and for each of those transporters.
 function printAnnexure(annex) {
   const html = printSheet({
     title: annex.title,
@@ -245,9 +248,9 @@ function printAnnexure(annex) {
       [['S.No', 'Destination', ...annex.cols.map((c) => ({ text: c, align: 'right' }))]],
       annex.rows.map((r) => [{ text: r.no, align: 'right' }, r.dest, ...r.cells.map((c) => ({ text: c == null ? '—' : money(c), align: 'right' }))])
     ),
-    afterHtml: printTerms(annex.terms) + printSignatures([
+    afterHtml: printConditions(fillConditions(annex.conditions, annex.dieselPrice), annex.transporters) + printSignatures([
       { label: 'For Packages Limited' },
-      { label: `For ${annex.vendorName}` },
+      ...(annex.transporters || []).map((t) => ({ label: `For ${t}` })),
     ]),
   });
   printDocument(`${annex.vendorName} - Annexure ${annex.annexure.replace(/\//g, '-')} - Revision ${annex.revisionNo}`, html);
@@ -263,6 +266,7 @@ function exportAnnexure(annex) {
     ['S.No', 'Destination', ...annex.cols],
     ...annex.rows.map((r) => [r.no, r.dest, ...r.cells.map((c) => (c == null ? '' : c))]),
   ];
-  if (annex.terms?.length) rows.push([], ['General terms & conditions'], ...annex.terms.map((t, i) => [`${i + 1}.`, t]));
+  if (annex.conditions?.length) rows.push([], ['Conditions'], ...fillConditions(annex.conditions, annex.dieselPrice).map((t, i) => [`${i + 1}.`, t]));
+  if (annex.transporters?.length) rows.push([], ['Rates applicable to'], ...annex.transporters.map((t, i) => [`${i + 1}.`, t]));
   downloadCsv(`${annex.vendorName} - Annexure ${annex.annexure.replace(/\//g, '-')} - Revision ${annex.revisionNo}.csv`, rows);
 }

@@ -9,11 +9,11 @@ import { forgetDraft } from '../revisionDraft.js';
 // order matters; everything else is just a place to go.
 const NAV_ITEMS = [
   { path: '/diesel-price', num: '1', label: 'Enter diesel price', roles: ['Rate Maintainer'] },
-  { path: '/vendors', num: '2', label: 'Select vendors', roles: ['Rate Maintainer'] },
+  { path: '/vendors', num: '2', label: 'Select rate lists', roles: ['Rate Maintainer'] },
   { path: '/review', num: '3', label: 'Review before / after', roles: ['Rate Maintainer'] },
   { path: '/approve', label: 'Approve and release', roles: ['Approver'] },
   { path: '/master-data-requests', label: 'Master data requests', roles: ['Approver'] },
-  { path: '/admin', label: 'Vendors & agreements', roles: ['Approver'] },
+  { path: '/admin', label: 'Rate lists & agreements', roles: ['Approver'] },
   { path: '/lookup', label: 'Rate lookup', roles: ['Rate Maintainer', 'Approver', 'Display'] },
 ];
 

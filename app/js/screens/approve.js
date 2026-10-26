@@ -1,4 +1,4 @@
-// The approver's queue: every vendor rate sheet waiting for approval, each
+// The approver's queue: every rate list's sheet waiting for approval, each
 // decided on its own. Tick several to approve, return, reject or print
 // them together; click a row to see that sheet's rates.
 import { getPendingSheets, approveSheets, rejectSheets, returnSheets } from '../api/revisionsApi.js';
@@ -8,7 +8,7 @@ import { revisionSheetHtml } from '../components/revisionPrint.js';
 import { printDocument } from '../components/printSheet.js';
 import {
   withAsyncState, escapeHtml, money, priceStr, pct, personLabel, toast, toastError,
-  openDialog, closeDialog, codedError, showInlineError,
+  openDialog, closeDialog, codedError, showInlineError, fillConditions,
 } from '../ui.js';
 
 export const title = 'Approve and Release';
@@ -58,13 +58,13 @@ function render(container, sheets) {
         <h3 style="margin-bottom:3px">Approve and release</h3>
         <span class="tag tag-accent num">${sheets.length} rate sheet${sheets.length === 1 ? '' : 's'} waiting</span>
       </div>
-      <p class="muted" style="font-size:13px">Each vendor's rate sheet is decided on its own. Tick several to approve, return, reject or print them together; click a row to check its rates.</p>
+      <p class="muted" style="font-size:13px">Each rate list's sheet is decided on its own. Tick several to approve, return, reject or print them together; click a row to check its rates.</p>
 
       <div class="table-scroll">
       <table class="table" style="margin-top:16px">
         <thead><tr>
           <th style="width:34px"><input type="checkbox" id="select-all" aria-label="Select all"></th>
-          <th style="text-align:right">Revision</th><th>Vendor</th><th>Annexure</th>
+          <th style="text-align:right">Revision</th><th>Rate list</th><th>Annexure</th>
           <th style="text-align:right">Rate lines</th><th style="text-align:right">Change</th>
           <th style="text-align:right">Rates effective</th><th>Submitted by</th><th style="text-align:right">Submitted on</th>
         </tr></thead>
@@ -166,7 +166,7 @@ function renderDetail(el, s, isOwn) {
 
     ${s.previousReturn ? `
       <div class="notice-warning" style="margin:12px 0 4px">
-        <div class="notice-title">Resubmission — this vendor's sheet was returned for correction on <span class="num">${escapeHtml(s.previousReturn.returnedOn)}</span></div>
+        <div class="notice-title">Resubmission — this list's sheet was returned for correction on <span class="num">${escapeHtml(s.previousReturn.returnedOn)}</span></div>
         <div class="muted" style="font-size:12.5px">Corrections requested by ${escapeHtml(personLabel(s.previousReturn.returnedBy))}:</div>
         <div class="notice-quote">${escapeHtml(s.previousReturn.reason)}</div>
       </div>` : ''}
@@ -198,11 +198,17 @@ function renderDetail(el, s, isOwn) {
           </tbody>
         </table>
         </div>
+        ${s.worksheet.conditions?.length ? `
+          <div class="hd" style="margin:18px 0 8px">Conditions · at the new diesel price</div>
+          <ol style="margin:0;padding-left:20px;font-size:13px;line-height:1.6">
+            ${fillConditions(s.worksheet.conditions, s.dieselPrice).map((c) => `<li>${escapeHtml(c)}</li>`).join('')}
+          </ol>` : ''}
       </div>
       <div>
         <div class="card elev-sm">
           <div class="card-kicker">Submission</div>
           <div class="stack" style="font-size:13px">
+            ${s.worksheet.transporters?.length ? `<div><div class="ro-lab" style="margin:0">Rates applicable to</div>${s.worksheet.transporters.map(escapeHtml).join('<br>')}</div>` : ''}
             <div><div class="ro-lab" style="margin:0">Submitted by</div>${escapeHtml(personLabel(s.submittedBy))}</div>
             <div><div class="ro-lab" style="margin:0">Submitted on</div><span class="num">${escapeHtml(s.submittedOn)}</span></div>
             <div><div class="ro-lab" style="margin:0">Diesel price notification</div>${s.notificationId ? `<a href="#" id="notif-download">${escapeHtml(s.notificationFileName)}</a>` : '<span class="muted">none attached</span>'}</div>
@@ -239,7 +245,7 @@ function openReasonDialog(container, sheets, kind) {
     <div class="dialog-title">${isReject ? 'Reject' : 'Return for correction'}: ${escapeHtml(describe(sheets))}</div>
     ${sheets.length > 1 ? `<div class="dialog-body" style="font-size:12.5px">${sheets.map((s) => escapeHtml(`${s.vendorName} · revision ${s.revisionNo}`)).join('<br>')}</div>` : ''}
     <div class="dialog-body" style="font-size:12.5px;opacity:.75">${isReject
-      ? 'Rejecting closes these sheets. The maintainer is notified with your reason and has to start a new revision for these vendors.'
+      ? 'Rejecting closes these sheets. The maintainer is notified with your reason and has to start a new revision for these rate lists.'
       : 'The maintainer is notified and sees your comments on their screen, with these sheets ready to correct and resubmit.'}${sheets.length > 1 ? ' The same comment goes with every sheet listed.' : ''}</div>
     <div class="field"><label>${isReject ? 'Reason for rejection' : 'Corrections required'} · required</label><textarea class="input" id="reason-input" style="min-height:110px" placeholder="${isReject ? 'Why are these rates being rejected?' : 'List exactly what needs to change, e.g. the effective date, a rate to re-check…'}"></textarea></div>
     <div id="reason-error" class="inline-error" hidden></div>

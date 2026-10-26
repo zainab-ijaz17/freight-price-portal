@@ -81,7 +81,9 @@ async function loadDb(client) {
   // query in flight at a time — running these concurrently on the same
   // client only appeared to work by accident (silently serialized, with a
   // deprecation warning that becomes a hard error in a future pg version).
-  const vendorsRes = await client.query('SELECT * FROM vendors ORDER BY id');
+  // L1, L2, … L10 in the order the lists were issued (not L1, L10, L2);
+  // lists added later have longer ids, so they come after.
+  const vendorsRes = await client.query('SELECT * FROM vendors ORDER BY length(id), id');
   const sheetsRes = await client.query('SELECT * FROM rate_sheets');
   const revisionsRes = await client.query('SELECT * FROM revisions');
   const snapshotsRes = await client.query('SELECT * FROM rate_snapshots');
@@ -97,11 +99,12 @@ async function loadDb(client) {
     stale: v.stale,
     validityStart: v.validity_start,
     validityEnd: v.validity_end,
+    transporters: v.transporters,
   }));
 
   const rateSheets = {};
   sheetsRes.rows.forEach((s) => {
-    rateSheets[s.vendor_id] = { title: s.title, annexure: s.annexure, cols: s.cols, weights: s.weights, rows: s.rows };
+    rateSheets[s.vendor_id] = { title: s.title, annexure: s.annexure, cols: s.cols, weights: s.weights, rows: s.rows, conditions: s.conditions };
   });
 
   const revisions = {};
@@ -119,7 +122,10 @@ async function loadDb(client) {
   const rateSnapshots = {};
   snapshotsRes.rows.forEach((s) => {
     rateSnapshots[s.vendor_id] = rateSnapshots[s.vendor_id] || {};
-    rateSnapshots[s.vendor_id][s.revision_no] = { rows: s.rows, auditRows: s.audit_rows, approvedBy: s.approved_by, approvedOn: s.approved_on };
+    rateSnapshots[s.vendor_id][s.revision_no] = {
+      rows: s.rows, auditRows: s.audit_rows, approvedBy: s.approved_by, approvedOn: s.approved_on,
+      conditions: s.conditions, transporters: s.transporters,
+    };
   });
 
   const state = {};
@@ -139,6 +145,8 @@ async function loadDb(client) {
     rateSheets,
     revisions,
     currentRevisionNo: state.current_revision_no ?? null,
+    // Which issue of server/rateLists.js the lists were loaded from.
+    rateListsIssue: state.rate_lists_issue ?? null,
     // One entry per vendor rate sheet waiting for approval — each is
     // approved, rejected or returned on its own (see routes/revisions.js).
     pendingSheets: state.pending_sheets ?? sheetsFromLegacyPending(state.pending_revision, vendorName),
@@ -203,10 +211,10 @@ function sheetsFromLegacyReturned(r, vendorName) {
 // below. Taken right after loadDb and again before saving; comparing the
 // two tells saveDb exactly which rows were added, changed or removed.
 const TABLES = {
-  vendors: { key: ['id'], cols: ['id', 'name', 'annexure', 'pass_through_pct', 'rounding_rule', 'stale', 'validity_start', 'validity_end'] },
-  rate_sheets: { key: ['vendor_id'], cols: ['vendor_id', 'title', 'annexure', 'cols', 'weights', 'rows'] },
+  vendors: { key: ['id'], cols: ['id', 'name', 'annexure', 'pass_through_pct', 'rounding_rule', 'stale', 'validity_start', 'validity_end', 'transporters'] },
+  rate_sheets: { key: ['vendor_id'], cols: ['vendor_id', 'title', 'annexure', 'cols', 'weights', 'rows', 'conditions'] },
   revisions: { key: ['revision_no'], cols: ['revision_no', 'diesel_price', 'effective_date', 'factor', 'approved_by', 'approved_on', 'notification_id'] },
-  rate_snapshots: { key: ['vendor_id', 'revision_no'], cols: ['vendor_id', 'revision_no', 'rows', 'audit_rows', 'approved_by', 'approved_on'] },
+  rate_snapshots: { key: ['vendor_id', 'revision_no'], cols: ['vendor_id', 'revision_no', 'rows', 'audit_rows', 'approved_by', 'approved_on', 'conditions', 'transporters'] },
   app_state: { key: ['key'], cols: ['key', 'value'] },
 };
 // Parents before children when inserting (a rate sheet needs its vendor),
@@ -221,20 +229,21 @@ function rowsOf(db) {
     tables[table].set(JSON.stringify(values.slice(0, keyLen)), JSON.stringify(values));
   };
   for (const v of db.vendors) {
-    put('vendors', [v.id, v.name, v.annexure, v.passThroughPct, v.roundingRule, v.stale, v.validityStart ?? null, v.validityEnd ?? null]);
+    put('vendors', [v.id, v.name, v.annexure, v.passThroughPct, v.roundingRule, v.stale, v.validityStart ?? null, v.validityEnd ?? null, v.transporters ?? []]);
   }
   for (const [vendorId, sheet] of Object.entries(db.rateSheets)) {
-    put('rate_sheets', [vendorId, sheet.title, sheet.annexure, sheet.cols, sheet.weights, sheet.rows]);
+    put('rate_sheets', [vendorId, sheet.title, sheet.annexure, sheet.cols, sheet.weights, sheet.rows, sheet.conditions ?? []]);
   }
   for (const [revNo, rev] of Object.entries(db.revisions)) {
     put('revisions', [Number(revNo), rev.dieselPrice, rev.effectiveDate, rev.factor, rev.approvedBy, rev.approvedOn, rev.notificationId ?? null]);
   }
   for (const [vendorId, byRev] of Object.entries(db.rateSnapshots)) {
     for (const [revNo, snap] of Object.entries(byRev)) {
-      put('rate_snapshots', [vendorId, Number(revNo), snap.rows, snap.auditRows ?? null, snap.approvedBy ?? null, snap.approvedOn ?? null]);
+      put('rate_snapshots', [vendorId, Number(revNo), snap.rows, snap.auditRows ?? null, snap.approvedBy ?? null, snap.approvedOn ?? null, snap.conditions ?? null, snap.transporters ?? null]);
     }
   }
   put('app_state', ['current_revision_no', db.currentRevisionNo]);
+  put('app_state', ['rate_lists_issue', db.rateListsIssue ?? null]);
   put('app_state', ['pending_sheets', db.pendingSheets]);
   put('app_state', ['returned_sheets', db.returnedSheets]);
   // Superseded by the two lists above; cleared once converted (loadDb).
@@ -252,6 +261,12 @@ function toParam(v) {
   return v !== null && typeof v === 'object' ? JSON.stringify(v) : v;
 }
 
+// app_state.value is JSONB whatever it holds, so a plain string (e.g.
+// rate_lists_issue) has to go in JSON-encoded too, not as raw text.
+function paramsFor(table, row) {
+  return table === 'app_state' ? [row[0], JSON.stringify(row[1])] : row.map(toParam);
+}
+
 async function saveDb(client, db, baseline) {
   const current = rowsOf(db);
 
@@ -262,7 +277,7 @@ async function saveDb(client, db, baseline) {
       ON CONFLICT (${key.join(', ')}) DO UPDATE SET ${updates}`;
     for (const [k, row] of current[table]) {
       if (baseline[table].get(k) === row) continue; // unchanged
-      await client.query(sql, JSON.parse(row).map(toParam));
+      await client.query(sql, paramsFor(table, JSON.parse(row)));
     }
   }
 

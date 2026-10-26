@@ -4,7 +4,7 @@ import { returnedNoticeHtml } from '../components/returnedNotice.js';
 import { revisionSheetHtml } from '../components/revisionPrint.js';
 import { printDocument } from '../components/printSheet.js';
 import { getSession } from '../session.js';
-import { withAsyncState, escapeHtml, money, pct, toast, toastError, downloadCsv, formatDate } from '../ui.js';
+import { withAsyncState, escapeHtml, money, pct, toast, toastError, downloadCsv, formatDate, fillConditions } from '../ui.js';
 
 export const title = 'Review Before / After';
 
@@ -115,7 +115,7 @@ function render(container, draft, sim, overrides, reload, preferredVendorId) {
       <p class="muted" style="font-size:13px">Nothing is written to the ledger until an approver releases it.</p>
 
       <div class="grid-4" style="margin:22px 0 6px">
-        <div><div class="hd">Vendors selected</div><div class="num" style="font-size:40px;line-height:1.1">${sim.totals.vendorCount}</div></div>
+        <div><div class="hd">Rate lists selected</div><div class="num" style="font-size:40px;line-height:1.1">${sim.totals.vendorCount}</div></div>
         <div><div class="hd">Rate lines affected</div><div class="num" style="font-size:40px;line-height:1.1">${sim.totals.rateLineCount}</div></div>
         <div><div class="hd">Diesel price change</div><div class="num" style="font-size:40px;line-height:1.1">${pct(sim.overallUpliftPct)}</div></div>
       </div>
@@ -123,7 +123,7 @@ function render(container, draft, sim, overrides, reload, preferredVendorId) {
       <div id="blocked-banner"></div>
 
       <div style="display:flex;gap:12px;align-items:flex-end;margin-top:22px">
-        <div class="field" style="width:280px"><label>Vendor</label>
+        <div class="field" style="width:280px"><label>Rate list</label>
           <select class="input" id="sim-vendor">
             ${sim.vendors.map((v) => `<option value="${v.id}" ${v.id === activeVendorId ? 'selected' : ''}>${escapeHtml(v.name)}</option>`).join('')}
           </select>
@@ -152,7 +152,7 @@ function render(container, draft, sim, overrides, reload, preferredVendorId) {
     container.querySelector('#blocked-banner').innerHTML = `
       <div class="error-banner">
         <span class="error-banner-dot">●</span>
-        <span>These vendors have rate lines with no rate on file: ${escapeHtml(sim.vendors.filter((v) => v.blocked).map((v) => v.name).join(', '))}. Their balancing column reads <span class="num">!</span> — type a rate for each under "New rates · rounded" before submitting.<span class="error-ref">Error REV-002 · Review before / after › New rates</span></span>
+        <span>These rate lists have lines with no rate on file: ${escapeHtml(sim.vendors.filter((v) => v.blocked).map((v) => v.name).join(', '))}. Their balancing column reads <span class="num">!</span> — type a rate for each under "New rates · rounded" before submitting.<span class="error-ref">Error REV-002 · Review before / after › New rates</span></span>
       </div>
     `;
   }
@@ -171,8 +171,13 @@ function render(container, draft, sim, overrides, reload, preferredVendorId) {
       <div style="font-family:var(--font-heading);font-size:17px">${escapeHtml(sheet.title)}</div>
       <div style="font-size:12.5px;color:color-mix(in srgb,var(--color-text) 65%,transparent)">Annexure ${escapeHtml(sheet.annexure)}</div>
       <div class="num" style="font-size:12.5px;color:color-mix(in srgb,var(--color-text) 65%,transparent)">Freight rates w.e.f. ${escapeHtml(sim.effectiveDate)}</div>
+      ${sheet.transporters?.length ? `<div style="font-size:12.5px;color:color-mix(in srgb,var(--color-text) 65%,transparent)">Rates applicable to: ${escapeHtml(sheet.transporters.join(' · '))}</div>` : ''}
     `;
-    sheetTableEl.innerHTML = worksheetTable(sheet);
+    sheetTableEl.innerHTML = worksheetTable(sheet) + (sheet.conditions?.length ? `
+      <div class="hd" style="margin:18px 0 8px">Conditions · at the new diesel price</div>
+      <ol style="margin:0;padding-left:20px;font-size:13px;line-height:1.6">
+        ${fillConditions(sheet.conditions, draft.dieselPrice).map((c) => `<li>${escapeHtml(c)}</li>`).join('')}
+      </ol>` : '');
   }
   renderVendor(activeVendorId);
   vendorSelect.addEventListener('change', () => renderVendor(vendorSelect.value));
@@ -236,7 +241,7 @@ function render(container, draft, sim, overrides, reload, preferredVendorId) {
   });
 }
 
-// One printed sheet per selected vendor, marked as a draft — for checking
+// One printed sheet per selected rate list, marked as a draft — for checking
 // on paper, or attaching to the file, before it's submitted.
 function printDraftSheets(draft, sim) {
   const session = getSession();
@@ -260,9 +265,9 @@ function printDraftSheets(draft, sim) {
   printDocument(`Revision ${sim.revisionNo} - draft rate sheets`, html);
 }
 
-// Every selected vendor's before/after lines, one row per rate line.
+// Every selected rate list's before/after lines, one row per rate line.
 function exportCsv(sim) {
-  const rows = [['Vendor', 'Annexure', 'Destination', 'Vehicle type', 'Base rate', 'Increase (PKR)', 'Sum with increase', 'New rate (rounded)']];
+  const rows = [['Rate list', 'Annexure', 'Destination', 'Vehicle type', 'Base rate', 'Increase (PKR)', 'Sum with increase', 'New rate (rounded)']];
   sim.vendors.forEach((v) => {
     const sheet = sim.worksheets[v.id];
     sheet.rows.forEach((r) => sheet.cols.forEach((c, j) => {

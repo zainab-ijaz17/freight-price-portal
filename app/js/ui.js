@@ -20,6 +20,12 @@ export function priceStr(n) {
   return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 }
 
+// A rate list's conditions, with {dieselPrice} ("based on PSO Fuel Price
+// @ PKR {dieselPrice}") filled in with the price the sheet is shown for.
+export function fillConditions(conditions, dieselPrice) {
+  return (conditions || []).map((c) => c.split('{dieselPrice}').join(priceStr(dieselPrice)));
+}
+
 export function pct(n, decimals = 2) {
   const sign = n > 0 ? '+' : '';
   return `${sign}${n.toFixed(decimals)}%`;

@@ -2,8 +2,8 @@
 -- history, and the pending-approval workflow. All idempotent (IF NOT
 -- EXISTS) so this can just run on every server start.
 --
--- Scoped to diesel-indexed per-trip freight rates for the five vendors
--- covered by the last revision — see the project's scope document. Flat
+-- Scoped to diesel-indexed per-trip freight rates, one rate sheet per
+-- rate list (see the note on `transporters` further down). Flat
 -- per-category rate cards and dedicated-vehicle contracts (found while
 -- reviewing the source Excel workbook) are explicitly out of scope and
 -- were removed after briefly existing here.
@@ -215,3 +215,18 @@ CREATE TABLE IF NOT EXISTS email_log (
   sent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   error TEXT
 );
+
+-- Rate sheets are issued list-wise, not per vendor: one rate list (e.g.
+-- "PLG - AAG", 20 ft & 40 ft for BU-FP & FC) applies to several
+-- transporters, and one transporter can be on several lists. A `vendors`
+-- row (and its vendor_id everywhere else) is now one rate list; the
+-- transporters it applies to are listed on it, and each list's rate
+-- sheet ends with its own conditions. See server/rateLists.js.
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS transporters JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE rate_sheets ADD COLUMN IF NOT EXISTS conditions JSONB NOT NULL DEFAULT '[]';
+
+-- A list's conditions and transporters can be edited (Rate lists &
+-- agreements), so each revision keeps the ones that applied to it. Null
+-- for a snapshot taken before this: the list's current ones apply.
+ALTER TABLE rate_snapshots ADD COLUMN IF NOT EXISTS conditions JSONB;
+ALTER TABLE rate_snapshots ADD COLUMN IF NOT EXISTS transporters JSONB;

@@ -2,15 +2,14 @@ const express = require('express');
 const { withDb } = require('../store');
 const { requireActor } = require('../middleware/auth');
 const {
-  vendorById, revisionCoveringDate, rateAtRevision, subtractOneDay, roundByRule, isValidDMY,
+  vendorById, revisionCoveringDate, rateAtRevision, subtractOneDay, scaledRate, isValidDMY,
 } = require('../rateEngine');
 const { fail, handle } = require('../errors');
-const generalTerms = require('../generalTerms');
 
 const router = express.Router();
 
-// Who released this vendor's sheet in that revision: each vendor's sheet
-// is approved on its own, so it can differ from whoever released the
+// Who released this list's sheet in that revision: each list's sheet is
+// approved on its own, so it can differ from whoever released the
 // revision's first sheet (revisions.approved_by).
 function approvalOf(db, vendorId, revNo) {
   const snap = db.rateSnapshots[vendorId]?.[revNo];
@@ -39,8 +38,9 @@ router.get('/rates/lookup', requireActor, handle('looking up the rate', async (r
     const revNo = revisionCoveringDate(db, date);
     if (revNo == null) return null; // date predates every known revision
 
+    // 0: the list doesn't offer this vehicle type for this destination.
     const rate = rateAtRevision(db, vendorId, destName, colIndex, revNo);
-    if (rate == null) return null;
+    if (!rate) return null;
 
     const revNos = Object.keys(db.revisions).map(Number).sort((a, b) => b - a);
     const nextRevNo = revNos[revNos.indexOf(revNo) - 1];
@@ -49,6 +49,7 @@ router.get('/rates/lookup', requireActor, handle('looking up the rate', async (r
     return {
       rate,
       vendorName: v.name,
+      transporters: v.transporters,
       destination: destName,
       vehicleType,
       annexure: sheet.annexure,
@@ -88,7 +89,7 @@ router.get('/rates/history', requireActor, handle('loading the rate history', as
           validTo: nextRev ? subtractOneDay(nextRev.effectiveDate) : 'current',
         };
       })
-      .filter((h) => h.rate != null);
+      .filter((h) => h.rate);
   });
 
   res.json(history);
@@ -129,8 +130,7 @@ router.get('/vendors/:vendorId/annexure', requireActor, handle('loading the anne
       // revision simply has no rate in it.
       cells: sheet.cols.map((_, j) => {
         const val = row[j + 1];
-        if (val == null) return null;
-        return snapshot ? val : roundByRule(val * rev.factor, 'Nearest 100');
+        return snapshot ? val ?? null : scaledRate(val, rev.factor);
       }),
       // Section 6's audit requirement: the base rate and unrounded
       // adjusted rate a published cell was computed from, where known
@@ -145,12 +145,16 @@ router.get('/vendors/:vendorId/annexure', requireActor, handle('loading the anne
       annexure: sheet.annexure,
       cols: sheet.cols,
       vendorName: v.name,
+      // As they stood in this revision, where it kept them.
+      transporters: snapshotEntry?.transporters ?? v.transporters,
       revisionNo,
       dieselPrice: rev.dieselPrice,
       effectiveDate: rev.effectiveDate,
       ...approvalOf(db, vendorId, revisionNo),
       isCurrent: revisionNo === db.currentRevisionNo,
-      terms: [...generalTerms.all, ...(generalTerms.byAnnexure[sheet.annexure] || [])],
+      // Printed at the end of the sheet. {dieselPrice} in one is filled in
+      // with this revision's price by the page.
+      conditions: snapshotEntry?.conditions ?? sheet.conditions,
       rows,
     };
   });

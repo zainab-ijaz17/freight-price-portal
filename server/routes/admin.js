@@ -1,8 +1,8 @@
 const express = require('express');
 const { withDb, withTransaction } = require('../store');
 const { requireActor, requireRole } = require('../middleware/auth');
-const { rateLineCount, vendorById } = require('../rateEngine');
-const { validateAgreementTerms, checkValidityOrder, parseRates, findRow } = require('../masterData');
+const { rateLineCount, vendorById, archiveEarlierRevisions } = require('../rateEngine');
+const { validateAgreementTerms, checkValidityOrder, parseRates, findRow, parseListTerms } = require('../masterData');
 const { fail, handle } = require('../errors');
 
 const router = express.Router();
@@ -46,6 +46,31 @@ router.patch('/admin/vendors/:vendorId/agreement', requireActor, requireRole('Ap
   res.json(result);
 }));
 
+// PUT /admin/vendors/:vendorId/list-terms — see app/js/api/adminApi.js
+// The list's conditions (printed at the end of its sheet) and the
+// transporters it applies to. A correction to the list as currently
+// issued: earlier revisions keep the ones they had (archived first, if
+// not already), the current revision shows the new ones.
+router.put('/admin/vendors/:vendorId/list-terms', requireActor, requireRole('Approver'), handle('saving the conditions', async (req, res) => {
+  const { vendorId } = req.params;
+  const result = await withTransaction(async (db) => {
+    const v = vendorById(db, vendorId);
+    const sheet = db.rateSheets[vendorId];
+    const after = parseListTerms(req.body || {});
+    const before = { conditions: sheet.conditions || [], transporters: v.transporters || [] };
+
+    archiveEarlierRevisions(db, vendorId, db.currentRevisionNo);
+    sheet.conditions = after.conditions;
+    v.transporters = after.transporters;
+    const current = db.rateSnapshots[vendorId]?.[db.currentRevisionNo];
+    if (current) Object.assign(current, { conditions: [...after.conditions], transporters: [...after.transporters] });
+
+    logAudit(db, 'list_terms_updated', req.actor, { vendorId, revisionNo: db.currentRevisionNo, before, after });
+    return after;
+  });
+  res.json(result);
+}));
+
 // GET /admin/vendors/:vendorId/rate-sheet — see app/js/api/adminApi.js
 router.get('/admin/vendors/:vendorId/rate-sheet', requireActor, requireRole('Approver'), handle('loading the rate sheet', async (req, res) => {
   res.json(await withDb(async (db) => {
@@ -71,10 +96,10 @@ router.patch('/admin/vendors/:vendorId/destinations', requireActor, requireRole(
     }
     const waiting = db.pendingSheets.find((s) => s.vendorId === vendorId);
     if (waiting) {
-      throw fail('MD-015', `This vendor's rate sheet is waiting for approval in revision ${waiting.revisionNo}; releasing it would overwrite a base rate changed now. Approve, return or reject that sheet first.`, { status: 409, field: 'Base rates' });
+      throw fail('MD-015', `This rate list's sheet is waiting for approval in revision ${waiting.revisionNo}; releasing it would overwrite a base rate changed now. Approve, return or reject that sheet first.`, { status: 409, field: 'Base rates' });
     }
     const row = findRow(sheet, destination);
-    if (!row) throw fail('MD-010', `"${destination.trim()}" is not on this vendor's rate sheet any more. Reload the page.`, { status: 404, field: 'Destination' });
+    if (!row) throw fail('MD-010', `"${destination.trim()}" is not on this rate list any more. Reload the page.`, { status: 404, field: 'Destination' });
     const after = parseRates(baseRates, sheet.cols, 'MD-013', `Base rate · ${row[0]}`);
     const before = row.slice(1);
     after.forEach((v, i) => { row[i + 1] = v; });

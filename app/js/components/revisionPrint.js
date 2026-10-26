@@ -1,9 +1,10 @@
-// The printable "rate revision" sheet for one vendor — current, increase
-// and new rate for every line, with the basis and signature boxes. Printed
-// by the maintainer from "Review before / after" and by the approver from
+// The printable "rate revision" sheet for one rate list — current,
+// increase and new rate for every line, with the basis, the list's
+// conditions at the new diesel price, and signature boxes. Printed by the
+// maintainer from "Review before / after" and by the approver from
 // "Approve and release".
-import { printSheet, printTable, printSignatures } from './printSheet.js';
-import { money, priceStr, pct, personLabel } from '../ui.js';
+import { printSheet, printTable, printSignatures, printConditions } from './printSheet.js';
+import { money, priceStr, pct, personLabel, fillConditions } from '../ui.js';
 
 /**
  * `s`: { revisionNo, vendorName, worksheet, dieselPrice, previousDieselPrice,
@@ -42,7 +43,7 @@ export function revisionSheetHtml(s) {
     subtitle: `${w.title} · Annexure ${w.annexure}`,
     meta,
     tableHtml: printTable(head, body),
-    afterHtml: printSignatures([
+    afterHtml: printConditions(fillConditions(w.conditions, s.dieselPrice), w.transporters) + printSignatures([
       { label: 'Prepared by (Rate Maintainer)', name: s.submittedBy ? personLabel(s.submittedBy) : '', date: s.submittedOn },
       { label: 'Checked by' },
       { label: 'Approved by (Rate Approver)' },

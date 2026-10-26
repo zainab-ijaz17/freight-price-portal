@@ -1,5 +1,5 @@
 // Dialogs that send a master data change: the shared send-and-show-errors
-// wiring (used by the Vendors & agreements request dialogs too) and the Rate
+// wiring (used by the Rate lists & agreements request dialogs too) and the Rate
 // Approver's "Add destination" / "Add vehicle type", which apply at once.
 import { raiseRequest } from '../api/changeRequestsApi.js';
 import { escapeHtml, toast, openDialog, closeDialog, showInlineError } from '../ui.js';

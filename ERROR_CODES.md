@@ -12,7 +12,7 @@ The letters say which screen or step the error came from; the text after `›` n
 | AUTH | Sign in / permissions |
 | DSL | Enter diesel price |
 | UPL | Notification attachment |
-| VND | Select vendors |
+| VND | Select rate lists |
 | REV | Review before / after |
 | APR | Approve and release |
 | MD | Master data |
@@ -42,11 +42,11 @@ The letters say which screen or step the error came from; the text after `›` n
 | UPL-003 | File over 10 MB | Attach a smaller copy |
 | UPL-004 | Attachment not found | Re-upload it |
 | UPL-005 | Upload failed on the server | Try again |
-| VND-001 | No vendor selected | Tick at least one vendor |
+| VND-001 | No rate list selected | Tick at least one rate list |
 | VND-002 | "Rates effective from" missing or not DD.MM.YYYY | Correct the date |
-| VND-003 | Vendor not found (possibly deleted) | Reload and reselect |
-| REV-001 | A selected vendor already has a rate sheet waiting for approval | Untick that vendor, or wait until it is decided |
-| REV-002 | Some lines have no rate | Type a rate under "New rates" for the vendors named |
+| VND-003 | Rate list not found (possibly deleted) | Reload and reselect |
+| REV-001 | A selected rate list already has a sheet waiting for approval | Untick that list, or wait until it is decided |
+| REV-002 | Some lines have no rate | Type a rate under "New rates" for the rate lists named |
 | APR-001 | Rate sheet no longer waiting for approval | Reload — someone already acted on it |
 | APR-002 | Approver submitted one of the selected sheets | Another approver must release it |
 | APR-003 | Confirmation password incorrect | Re-enter your SAP password |
@@ -58,8 +58,8 @@ The letters say which screen or step the error came from; the text after `›` n
 | MD-002 | Unknown rounding rule | Pick from the list |
 | MD-003 | Validity date not DD.MM.YYYY | Correct the date |
 | MD-004 | "Valid to" earlier than "Valid from" | Correct the dates |
-| MD-005 | Vendor name missing | Enter it |
-| MD-006 | New vendor needs a first destination and vehicle type | Enter both |
+| MD-005 | Rate list name missing | Enter it |
+| MD-006 | New rate list needs a first destination and vehicle type | Enter both |
 | MD-007 | Destination name missing | Enter it |
 | MD-008 | Wrong number of base rates | One per vehicle type / destination (blank allowed) |
 | MD-009 | Destination already on the rate sheet | Use the existing row |
@@ -67,11 +67,13 @@ The letters say which screen or step the error came from; the text after `›` n
 | MD-011 | Vehicle type name missing | Enter it |
 | MD-012 | Vehicle type already on the rate sheet | Use the existing column |
 | MD-013 | Invalid base rate (negative or not a number) | Enter whole rupees or leave blank |
-| MD-014 | Vendor name already exists | Use a different name |
-| MD-015 | Base rate changed while that vendor's rate sheet waits for approval | Decide the sheet first |
+| MD-014 | Rate list name already exists | Use a different name |
+| MD-015 | Base rate changed while that rate list's sheet waits for approval | Decide the sheet first |
+| MD-016 | Rate list has no transporter under "Rates applicable to" | Enter at least one, one per line |
+| MD-017 | Too many conditions / transporters, or a line too long | Shorten them |
 | CR-001 | Request not found or already decided | Reload |
 | CR-002 | Requester tried to decide their own request | Another approver must decide |
-| CR-003 | Vendor has a rate sheet waiting for approval (also blocks adding a destination or vehicle type) | Decide that sheet first |
+| CR-003 | Rate list has a sheet waiting for approval (also blocks adding a destination or vehicle type) | Decide that sheet first |
 | CR-004 | Reason missing (deletion or rejection) | Enter a reason |
 | CR-005 | Same request already waiting | Wait for the existing one |
 | CR-006 | Unknown request type | Report it (should not happen from the screens) |

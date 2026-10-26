@@ -4,7 +4,8 @@ const { PORT } = require('./config');
 const { ensureSchema, seedIfEmpty, migrateState } = require('./store');
 const { startReminderJob } = require('./approvalEmails');
 const { mailConfigured } = require('./mailer');
-const seedData = require('./seedData');
+const { seed } = require('./seedData');
+const { replaceRateLists } = require('./replaceRateLists');
 const authRoutes = require('./routes/auth');
 const vendorsRoutes = require('./routes/vendors');
 const dieselRoutes = require('./routes/diesel');
@@ -19,8 +20,9 @@ const { sendError } = require('./errors');
 
 async function main() {
   await ensureSchema();
-  await seedIfEmpty(seedData);
+  await seedIfEmpty(seed);
   await migrateState();
+  await replaceRateLists();
   startReminderJob();
   if (!mailConfigured()) console.warn('Approval emails are off: set SMTP_HOST and MAIL_FROM (see manifest.yml) to send them.');
 

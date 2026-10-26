@@ -231,8 +231,9 @@ input[type=checkbox] { accent-color: var(--color-accent); width: 15px; height: 1
 .print-table tr { break-inside: avoid; }
 .print-terms { margin-top: 10px; font-size: 8.5pt; }
 .print-terms ol { margin: 4px 0 0; padding-left: 18px; }
-.print-signatures { display: flex; gap: 28px; margin-top: 34px; break-inside: avoid; }
-.print-signature { flex: 1; font-size: 9pt; line-height: 1.5; }
+.print-terms li { break-inside: avoid; }
+.print-signatures { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 34px; break-inside: avoid; }
+.print-signature { flex: 1; min-width: 150px; font-size: 9pt; line-height: 1.5; }
 .print-signature-line { border-bottom: 1px solid #000; height: 34px; margin-bottom: 4px; }
 .print-footer { margin-top: 14px; font-size: 8pt; color: #555; }
 

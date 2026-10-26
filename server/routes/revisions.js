@@ -1,13 +1,16 @@
 // The revision workflow. A maintainer submits a revision covering one or
-// more vendors; each vendor's rate sheet then waits for approval as its
-// own item (db.pendingSheets), so an approver can release one vendor's
-// sheet while returning or rejecting another's. Several revisions can be
-// waiting at once, as long as no vendor has two sheets waiting.
+// more rate lists (a "vendor" record here is one rate list — see
+// schema.sql); each list's sheet then waits for approval as its own item
+// (db.pendingSheets), so an approver can release one list's sheet while
+// returning or rejecting another's. Several revisions can be waiting at
+// once, as long as no list has two sheets waiting.
 const express = require('express');
 const { withDb, withTransaction } = require('../store');
 const { requireActor, requireRole } = require('../middleware/auth');
 const { verifyEmployeeCredentials } = require('../sfClient');
-const { buildSimulation, rateLineCount, vendorById, today, parseDMY, isValidDMY } = require('../rateEngine');
+const {
+  buildSimulation, rateLineCount, vendorById, today, parseDMY, isValidDMY, archiveEarlierRevisions, listTerms,
+} = require('../rateEngine');
 const { fail, handle } = require('../errors');
 const { createAlert } = require('../alerts');
 const { emailSheetsSubmitted } = require('../approvalEmails');
@@ -27,7 +30,7 @@ function personText(p) {
 
 function validateSimulationInput(payload) {
   if (!payload.vendorIds?.length) {
-    throw fail('VND-001', 'Select at least one vendor to simulate.', { field: 'Vendor list' });
+    throw fail('VND-001', 'Select at least one rate list to simulate.', { field: 'Rate lists' });
   }
   if (!isValidDMY(payload.effectiveDate)) {
     throw fail('VND-002', 'Enter the date the new rates take effect as DD.MM.YYYY.', { field: 'Rates effective from' });
@@ -75,7 +78,7 @@ router.post('/revisions', requireActor, requireRole('Rate Maintainer'), handle('
       .filter(Boolean);
     if (busy.length) {
       const list = busy.map((s) => `${s.vendorName} (revision ${s.revisionNo})`).join(', ');
-      throw fail('REV-001', `A rate sheet is already waiting for approval for: ${list}. Untick ${busy.length === 1 ? 'that vendor' : 'those vendors'}, or wait until the approver has decided.`, { status: 409, field: 'Vendor list' });
+      throw fail('REV-001', `A rate sheet is already waiting for approval for: ${list}. Untick ${busy.length === 1 ? 'that list' : 'those lists'}, or wait until the approver has decided.`, { status: 409, field: 'Rate lists' });
     }
     if (!payload.notificationId) {
       throw fail('DSL-004', 'Attach the diesel-price notification before submitting.', { field: 'Attach notification' });
@@ -212,21 +215,6 @@ function byRevision(sheets) {
   return groups;
 }
 
-// Every earlier revision this vendor's sheet sat unchanged through (back to
-// its last archived one) gets the rows as they are now, before this
-// release overwrites them — so a lookup for those revisions shows what
-// really applied then. Stops at the seed data's pre-existing revisions,
-// whose rates are a scalar approximation (factor ≠ 1), not today's rows.
-function archiveEarlierRevisions(db, vendorId, revisionNo) {
-  const sheet = db.rateSheets[vendorId];
-  db.rateSnapshots[vendorId] = db.rateSnapshots[vendorId] || {};
-  const earlier = Object.keys(db.revisions).map(Number).filter((r) => r < revisionNo).sort((a, b) => b - a);
-  for (const r of earlier) {
-    if (db.rateSnapshots[vendorId][r] || db.revisions[r].factor !== 1) break;
-    db.rateSnapshots[vendorId][r] = { rows: sheet.rows.map((row) => [...row]), auditRows: null };
-  }
-}
-
 // A revision released after a later one (23 approved once 24 already is):
 // a vendor revised in that later revision has since moved on, so its
 // rates during this one are those of its last archive before it — not its
@@ -236,7 +224,7 @@ function archiveForLateRevision(db, revisionNo) {
     const revs = Object.keys(snaps).map(Number);
     if (snaps[revisionNo] || !revs.some((r) => r > revisionNo)) continue;
     const before = revs.filter((r) => r < revisionNo).sort((a, b) => b - a)[0];
-    if (before != null) snaps[revisionNo] = { rows: snaps[before].rows.map((row) => [...row]), auditRows: null };
+    if (before != null) snaps[revisionNo] = { ...snaps[before], rows: snaps[before].rows.map((row) => [...row]), auditRows: null, approvedBy: null, approvedOn: null };
   }
 }
 
@@ -264,6 +252,7 @@ function releaseSheet(db, s, approver) {
     auditRows,
     approvedBy: approver.name,
     approvedOn: today(),
+    ...listTerms(db, s.vendorId),
   };
 
   // The first sheet released in a revision creates it; later ones join it.

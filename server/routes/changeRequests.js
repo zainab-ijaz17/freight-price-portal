@@ -37,7 +37,7 @@ function toApi(r) {
 function assertSheetNotInPendingRevision(db, vendorId) {
   const waiting = vendorId && db.pendingSheets.find((s) => s.vendorId === vendorId);
   if (waiting) {
-    throw fail('CR-003', `This vendor's rate sheet is waiting for approval in revision ${waiting.revisionNo}. Approve, reject or return that sheet first, then make this change.`, { status: 409 });
+    throw fail('CR-003', `This rate list's sheet is waiting for approval in revision ${waiting.revisionNo}. Approve, reject or return that sheet first, then make this change.`, { status: 409 });
   }
 }
 

@@ -79,11 +79,12 @@ export function printSignatures(boxes) {
     </div>`;
 }
 
-export function printTerms(terms) {
-  if (!terms?.length) return '';
-  return `
+/** The end of a rate list's sheet: its conditions (already filled in — see fillConditions) and who it applies to. */
+export function printConditions(conditions, transporters) {
+  const list = (heading, items) => (items?.length ? `
     <div class="print-terms">
-      <div><strong>General terms &amp; conditions</strong></div>
-      <ol>${terms.map((t) => `<li>${escapeHtml(t)}</li>`).join('')}</ol>
-    </div>`;
+      <div><strong>${heading}</strong></div>
+      <ol>${items.map((t) => `<li>${escapeHtml(t)}</li>`).join('')}</ol>
+    </div>` : '');
+  return list('Conditions', conditions) + list('Rates applicable to', transporters);
 }

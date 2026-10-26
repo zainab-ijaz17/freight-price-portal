@@ -3,7 +3,7 @@ import { getDraft, updateDraft, ensureDraftLoaded } from '../revisionDraft.js';
 import { returnedNoticeHtml } from '../components/returnedNotice.js';
 import { withAsyncState, escapeHtml, trimNum, isValidDisplayDate, dateField, wireDateFields, codedError, toastError } from '../ui.js';
 
-export const title = 'Select Vendors';
+export const title = 'Select Rate Lists';
 
 export async function mount(container) {
   await ensureDraftLoaded().catch(() => {});
@@ -15,16 +15,16 @@ export async function mount(container) {
 
   const controller = new AbortController();
   withAsyncState(container, getVendors, (vendors) => render(container, draft, vendors), {
-    loadingLabel: 'Loading vendors…',
+    loadingLabel: 'Loading rate lists…',
   });
   return () => controller.abort();
 }
 
 function render(container, draft, vendors) {
-  // A vendor whose rate sheet is already waiting for approval can't go
-  // into another revision until that one is decided.
+  // A rate list whose sheet is already waiting for approval can't go into
+  // another revision until that one is decided.
   const available = vendors.filter((v) => v.pendingRevisionNo == null);
-  // Filtered to vendors that still exist and are free — one could have
+  // Filtered to lists that still exist and are free — one could have
   // been deleted, or submitted elsewhere, since this draft was made.
   const selected = new Set(
     (draft.vendorIds.length ? draft.vendorIds : available.map((v) => v.id)).filter((id) => available.some((v) => v.id === id))
@@ -33,8 +33,8 @@ function render(container, draft, vendors) {
   container.innerHTML = `
     <div style="max-width:1180px">
       ${draft.returnedFrom ? `<div style="margin-bottom:22px">${returnedNoticeHtml(draft.returnedFrom, { compact: true })}</div>` : ''}
-      <h3 style="margin-bottom:3px">Select vendors</h3>
-      <p class="muted" style="font-size:13px">Only checked contracts are simulated and repriced. Each vendor's rate sheet goes to the approver as its own item, so they can be approved separately.</p>
+      <h3 style="margin-bottom:3px">Select rate lists</h3>
+      <p class="muted" style="font-size:13px">Only checked rate lists are simulated and repriced. Each list's sheet goes to the approver as its own item, so they can be approved separately.</p>
 
       <div class="field" style="width:220px;margin-top:18px">
         <label for="rate-effective-from">Rates effective from</label>
@@ -44,7 +44,7 @@ function render(container, draft, vendors) {
       <table class="table" style="margin-top:18px">
         <thead><tr>
           <th style="width:34px"><input type="checkbox" id="toggle-all"></th>
-          <th>Vendor</th><th>Annexure</th><th style="text-align:right">Pass-through %</th>
+          <th>Rate list</th><th>Annexure</th><th style="text-align:right">Pass-through %</th>
           <th>Rounding</th><th style="text-align:right">Rate lines</th><th style="text-align:right">Last revised</th>
         </tr></thead>
         <tbody id="vendor-rows"></tbody>
@@ -75,6 +75,7 @@ function render(container, draft, vendors) {
           <span>${escapeHtml(v.name)}</span>
           ${v.stale ? '<span class="tag tag-outline" style="margin-left:8px;font-size:10px">not revised 90+ days</span>' : ''}
           ${waiting ? `<span class="tag tag-warning" style="margin-left:8px;font-size:10px">waiting for approval · revision ${v.pendingRevisionNo}</span>` : ''}
+          ${v.transporters?.length ? `<div class="muted" style="font-size:12px">${escapeHtml(v.transporters.join(' · '))}</div>` : ''}
         </td>
         <td class="num">${escapeHtml(v.annexure)}</td>
         <td class="num" style="text-align:right">${trimNum(v.passThroughPct)}</td>
@@ -88,7 +89,7 @@ function render(container, draft, vendors) {
   function updateSummary() {
     const selVendors = vendors.filter((v) => selected.has(v.id));
     const lines = selVendors.reduce((sum, v) => sum + v.rateLineCount, 0);
-    summaryEl.textContent = `${selVendors.length} vendors · ${lines} rate lines selected`;
+    summaryEl.textContent = `${selVendors.length} rate list${selVendors.length === 1 ? '' : 's'} · ${lines} rate lines selected`;
     toggleAll.checked = available.length > 0 && selVendors.length === available.length;
     toggleAll.indeterminate = selVendors.length > 0 && selVendors.length < available.length;
   }
@@ -116,7 +117,7 @@ function render(container, draft, vendors) {
 
   container.querySelector('#run-sim').addEventListener('click', () => {
     if (selected.size === 0) {
-      toastError(codedError('VND-001', 'Select at least one vendor to simulate.', 'Vendor list'));
+      toastError(codedError('VND-001', 'Select at least one rate list to simulate.', 'Rate lists'));
       return;
     }
     if (!isValidDisplayDate(rateEffectiveFrom.value)) {
