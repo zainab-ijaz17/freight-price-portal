@@ -1,22 +1,35 @@
 import { getCurrentDieselPrice } from '../api/dieselApi.js';
-import { getReturnedRevision } from '../api/revisionsApi.js';
+import { getReturnedSheets, getApprovalQueue, listSavedDrafts } from '../api/revisionsApi.js';
 import { uploadNotification } from '../api/notificationsApi.js';
-import { getDraft, startDraft, updateDraft, ensureDraftLoaded, clearDraft, saveNow, getDraftSavedAt } from '../revisionDraft.js';
+import {
+  getDraft, getDraftId, startDraft, newDraft, openDraft, closeDraft, updateDraft, ensureDraftLoaded,
+  clearDraft, discardSavedDraft, saveNow, getDraftSavedAt,
+} from '../revisionDraft.js';
 import { returnedNoticeHtml } from '../components/returnedNotice.js';
 import {
   withAsyncState, escapeHtml, priceStr, pct, daysBetween, parseDisplayDate, isValidDisplayDate, formatDateTime,
-  dateField, wireDateFields, codedError, showInlineError, toastError, toast, openDialog, closeDialog,
+  dateField, wireDateFields, codedError, showInlineError, toastError, toast, openDialog, closeDialog, personLabel,
 } from '../ui.js';
 
 export const title = 'Enter Diesel Price';
 
 export function mount(container) {
   const controller = new AbortController();
-  const loader = () => Promise.all([getCurrentDieselPrice(), getReturnedRevision(), ensureDraftLoaded()]);
-  withAsyncState(container, loader, ([previous, returned]) => render(container, previous, returned), {
+  load(container);
+  return () => { controller.abort(); closeDialog(); };
+}
+
+function load(container) {
+  const loader = async () => {
+    await ensureDraftLoaded();
+    const [previous, returned, drafts, queue] = await Promise.all([
+      getCurrentDieselPrice(), getReturnedSheets(), listSavedDrafts(), getApprovalQueue(),
+    ]);
+    return { previous, returned, drafts, queue };
+  };
+  withAsyncState(container, loader, (ctx) => render(container, ctx), {
     loadingLabel: 'Loading current diesel price…',
   });
-  return () => { controller.abort(); closeDialog(); };
 }
 
 function signed(n, digits) {
@@ -24,22 +37,50 @@ function signed(n, digits) {
   return `${n < 0 ? '−' : '+'}PKR ${s}`;
 }
 
-function render(container, previous, returned) {
+// Returned sheets, one group per revision: reopened together as one draft.
+function returnedGroups(returned) {
+  const groups = new Map();
+  returned.forEach((r) => groups.set(r.revisionNo, [...(groups.get(r.revisionNo) || []), r]));
+  return [...groups.entries()].map(([revisionNo, sheets]) => ({
+    revisionNo,
+    sheets,
+    returns: sheets.map((s) => ({ vendorName: s.vendorName, reason: s.reason, returnedBy: s.returnedBy, returnedOn: s.returnedOn })),
+  }));
+}
+
+function draftSummary(d) {
+  const parts = [];
+  parts.push(d.dieselPrice != null ? `PKR ${priceStr(d.dieselPrice)}` : 'No price yet');
+  if (d.dieselEffectiveDate) parts.push(`effective ${d.dieselEffectiveDate}`);
+  parts.push(d.vendorIds?.length ? `${d.vendorIds.length} rate list${d.vendorIds.length === 1 ? '' : 's'}` : 'no rate lists picked');
+  return parts.join(' · ');
+}
+
+function render(container, ctx) {
+  const { previous } = ctx;
   const draft = getDraft();
-  const correcting = returned && draft?.returnedFrom?.revisionNo === returned.revisionNo;
+  const groups = returnedGroups(ctx.returned);
 
   container.innerHTML = `
-    ${returned ? `<div style="max-width:1080px;margin-bottom:24px">${returnedNoticeHtml(returned, {
-      compact: correcting,
-      actionsHtml: correcting ? '' : `
-        <div class="row-gap" style="margin-top:12px">
-          <button class="btn btn-primary" id="reopen-returned">Revise and resubmit</button>
-          <span class="muted" style="font-size:12px">Reopens the submission by ${escapeHtml(returned.submittedBy?.name || '')} with its figures, attachment and vendors already filled in.</span>
-        </div>`,
-    })}</div>` : ''}
+    ${groups.map((g) => {
+      const correcting = draft?.returnedFrom?.revisionNo === g.revisionNo;
+      const submitter = g.sheets[0].submittedBy;
+      return `<div style="max-width:1080px;margin-bottom:18px">${returnedNoticeHtml(g, {
+        compact: correcting,
+        actionsHtml: correcting ? '' : `
+          <div class="row-gap" style="margin-top:12px">
+            <button class="btn btn-primary" data-reopen="${g.revisionNo}">Revise and resubmit</button>
+            <span class="muted" style="font-size:12px">Opens a new draft from the submission by ${escapeHtml(personLabel(submitter))}, with its figures, attachment and ${g.sheets.length === 1 ? 'rate list' : `${g.sheets.length} rate lists`} already filled in.</span>
+          </div>`,
+      })}</div>`;
+    }).join('')}
+    ${groups.length ? '<div style="height:6px"></div>' : ''}
     <div style="display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:34px;max-width:1080px">
       <div>
-        <h3 style="margin-bottom:3px">Enter diesel price</h3>
+        <div class="row-gap" style="align-items:baseline">
+          <h3 style="margin-bottom:3px">Enter diesel price</h3>
+          ${draft ? `<span class="tag tag-neutral">${getDraftId() == null ? 'New draft' : 'Saved draft'}</span>` : ''}
+        </div>
         <p class="muted" style="font-size:13px;max-width:46ch">One entry reprices every indexed contract. Values are checked again on confirm.</p>
 
         <form id="diesel-form" class="grid-2" style="margin-top:20px" novalidate>
@@ -93,8 +134,56 @@ function render(container, previous, returned) {
         <p class="muted" style="font-size:11.5px;margin-top:14px;line-height:1.5">Dashed fields are system-calculated and never editable.</p>
       </div>
     </div>
+
+    <div class="grid-2" id="work-lists" style="max-width:1080px;margin-top:40px;gap:34px;align-items:start">
+      <div>
+        <div class="spread">
+          <div class="hd">Your saved drafts · <span class="num">${ctx.drafts.length}</span></div>
+          ${draft ? '<button class="btn btn-ghost" id="new-draft" style="font-size:12.5px">Start a new revision</button>' : ''}
+        </div>
+        <div style="margin-top:10px">
+          ${ctx.drafts.length ? ctx.drafts.map((d) => {
+            const open = d.id === getDraftId();
+            return `
+              <div class="card elev-sm list-card">
+                <div class="spread" style="gap:12px;align-items:flex-start">
+                  <div style="min-width:0">
+                    <div style="font-size:13.5px">${escapeHtml(draftSummary(d.data))}${open ? ' <span class="tag tag-accent" style="font-size:10px;margin-left:6px">open</span>' : ''}</div>
+                    <div class="muted" style="font-size:12px;margin-top:3px">Saved <span class="num">${escapeHtml(formatDateTime(d.savedAt))}</span>${d.data.returnedFrom ? ` · correcting revision ${d.data.returnedFrom.revisionNo}` : ''}${d.data.confirmed ? '' : ' · price not confirmed yet'}</div>
+                  </div>
+                  <div class="row-gap" style="flex:none">
+                    ${open ? '' : `<button class="btn btn-secondary" data-open-draft="${d.id}">Open</button>`}
+                    <button class="link-btn" data-delete-draft="${d.id}">Delete</button>
+                  </div>
+                </div>
+              </div>`;
+          }).join('') : '<p class="muted" style="font-size:13px">None. "Save Draft" keeps the revision you are working on here, and you can keep several.</p>'}
+        </div>
+      </div>
+      <div>
+        <div class="hd">Waiting for approval · <span class="num">${ctx.queue.length}</span></div>
+        <div style="margin-top:10px">
+          ${ctx.queue.length ? `
+            <table class="table">
+              <thead><tr><th style="text-align:right">Rev.</th><th>Rate list</th><th>Submitted by</th><th style="text-align:right">On</th></tr></thead>
+              <tbody>
+                ${ctx.queue.map((s) => `
+                  <tr>
+                    <td class="num" style="text-align:right">${s.revisionNo}</td>
+                    <td>${escapeHtml(s.vendorName)}</td>
+                    <td style="font-size:12.5px">${escapeHtml(personLabel(s.submittedBy))}</td>
+                    <td class="num" style="text-align:right">${escapeHtml(s.submittedOn)}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+            <p class="muted" style="font-size:12px;margin-top:8px">Each rate list's sheet is approved on its own. A list with a sheet waiting can't go into another revision until it's decided.</p>`
+          : '<p class="muted" style="font-size:13px">Nothing is waiting for approval.</p>'}
+        </div>
+      </div>
+    </div>
   `;
   wireDateFields(container);
+  const rerender = () => load(container);
 
   const form = container.querySelector('#diesel-form');
   const dateInput = container.querySelector('#effectiveDate');
@@ -114,7 +203,7 @@ function render(container, previous, returned) {
     draftStatus.querySelector('#discard-draft').addEventListener('click', () => {
       openDialog(`
         <div class="dialog-title">Discard this draft?</div>
-        <div class="dialog-body">The saved diesel price, vendor selection and any rates you typed in are deleted. This can't be undone.</div>
+        <div class="dialog-body">The saved diesel price, rate list selection and any rates you typed in are deleted. This can't be undone.</div>
         <div class="dialog-actions">
           <button class="btn btn-secondary" id="dlg-cancel">Keep draft</button>
           <button class="btn btn-primary" id="dlg-confirm">Discard draft</button>
@@ -125,11 +214,49 @@ function render(container, previous, returned) {
         await clearDraft();
         closeDialog();
         toast('Draft discarded.', 'info');
-        render(container, previous, returned);
+        rerender();
       });
     });
   }
   showDraftStatus();
+
+  container.querySelector('#new-draft')?.addEventListener('click', async () => {
+    await closeDraft();
+    toast('Your draft is saved under "Your saved drafts". Starting a new one.', 'info');
+    rerender();
+  });
+
+  container.querySelector('#work-lists').addEventListener('click', async (e) => {
+    const openId = e.target.dataset?.openDraft;
+    const deleteId = e.target.dataset?.deleteDraft;
+    if (openId) {
+      await closeDraft();
+      openDraft(ctx.drafts.find((d) => String(d.id) === openId));
+      rerender();
+    } else if (deleteId) {
+      const d = ctx.drafts.find((x) => String(x.id) === deleteId);
+      openDialog(`
+        <div class="dialog-title">Delete this draft?</div>
+        <div class="dialog-body">${escapeHtml(draftSummary(d.data))}, saved ${escapeHtml(formatDateTime(d.savedAt))}. It is deleted for good.</div>
+        <div class="dialog-actions">
+          <button class="btn btn-secondary" id="dlg-cancel">Keep draft</button>
+          <button class="btn btn-primary" id="dlg-confirm">Delete draft</button>
+        </div>
+      `);
+      document.getElementById('dlg-cancel').addEventListener('click', closeDialog);
+      document.getElementById('dlg-confirm').addEventListener('click', async () => {
+        try {
+          await discardSavedDraft(d.id);
+          closeDialog();
+          toast('Draft deleted.', 'info');
+          rerender();
+        } catch (err) {
+          closeDialog();
+          toastError(err, 'Could not delete the draft.');
+        }
+      });
+    }
+  });
 
   // { id, originalName } once uploaded — this, not the file input, is what
   // "attached" means: the file has actually reached the server and has a
@@ -166,16 +293,20 @@ function render(container, previous, returned) {
     recalc();
   }
 
-  container.querySelector('#reopen-returned')?.addEventListener('click', () => {
-    startDraft({
-      ...returned.draft,
-      returnedFrom: { revisionNo: returned.revisionNo, reason: returned.reason, returnedBy: returned.returnedBy, returnedOn: returned.returnedOn },
+  container.querySelectorAll('[data-reopen]').forEach((btn) => btn.addEventListener('click', async () => {
+    const g = groups.find((x) => String(x.revisionNo) === btn.dataset.reopen);
+    const first = g.sheets[0].draft;
+    await newDraft({
+      ...first,
+      vendorIds: g.sheets.flatMap((s) => s.draft.vendorIds),
+      overrides: Object.assign({}, ...g.sheets.map((s) => s.draft.overrides || {})),
+      returnedFrom: { revisionNo: g.revisionNo, returns: g.returns },
       previousDieselPrice: previous.price,
       previousEffectiveDate: previous.effectiveDate,
     });
-    render(container, previous, returned);
-    toast('Returned revision reopened. Make the corrections, then continue through vendors and review to resubmit.', 'info', 6000);
-  });
+    rerender();
+    toast('Returned sheets reopened as a new draft. Make the corrections, then continue through rate lists and review to resubmit.', 'info', 6000);
+  }));
 
   form.notification.addEventListener('change', async () => {
     const file = form.notification.files[0];
@@ -207,8 +338,8 @@ function render(container, previous, returned) {
     if (getDraft()) updateDraft(fields); else startDraft(fields);
     try {
       const at = await saveNow();
-      showDraftStatus();
-      toast(`Draft saved ${formatDateTime(at)}. It isn't submitted yet — it will be here next time you sign in.`, 'success', 6000);
+      toast(`Draft saved ${formatDateTime(at)}. It isn't submitted yet — it stays under "Your saved drafts" until you submit or delete it.`, 'success', 6000);
+      rerender();
     } catch (err) {
       toastError(err, 'Your draft could not be saved.');
     }

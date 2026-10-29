@@ -1,8 +1,11 @@
 const path = require('path');
 const express = require('express');
 const { PORT } = require('./config');
-const { ensureSchema, seedIfEmpty } = require('./store');
-const seedData = require('./seedData');
+const { ensureSchema, seedIfEmpty, migrateState } = require('./store');
+const { startReminderJob } = require('./approvalEmails');
+const { mailConfigured } = require('./mailer');
+const { seed } = require('./seedData');
+const { replaceRateLists } = require('./replaceRateLists');
 const authRoutes = require('./routes/auth');
 const vendorsRoutes = require('./routes/vendors');
 const dieselRoutes = require('./routes/diesel');
@@ -17,7 +20,11 @@ const { sendError } = require('./errors');
 
 async function main() {
   await ensureSchema();
-  await seedIfEmpty(seedData);
+  await seedIfEmpty(seed);
+  await migrateState();
+  await replaceRateLists();
+  startReminderJob();
+  if (!mailConfigured()) console.warn('Approval emails are off: set SMTP_HOST and MAIL_FROM (see manifest.yml) to send them.');
 
   const app = express();
   app.use(express.json());

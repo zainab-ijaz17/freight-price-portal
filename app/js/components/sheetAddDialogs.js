@@ -1,5 +1,5 @@
 // Dialogs that send a master data change: the shared send-and-show-errors
-// wiring (used by the Administrator's request dialogs too) and the Rate
+// wiring (used by the Rate lists & agreements request dialogs too) and the Rate
 // Approver's "Add destination" / "Add vehicle type", which apply at once.
 import { raiseRequest } from '../api/changeRequestsApi.js';
 import { escapeHtml, toast, openDialog, closeDialog, showInlineError } from '../ui.js';
@@ -23,7 +23,7 @@ export function wireRequestDialog({ kind, collect, errorId, onDone, successText 
     try {
       const created = await raiseRequest(kind, collected.payload, collected.reason);
       closeDialog();
-      toast(created.status === 'applied' ? successText : `Request #${created.id} sent to the Rate Approver. ${successText}`, 'success', 6000);
+      toast(created.status === 'applied' ? successText : `Request #${created.id} sent to the other Rate Approvers. ${successText}`, 'success', 6000);
       onDone();
     } catch (err) {
       showInlineError(errorEl, err);

@@ -13,8 +13,8 @@ registerRoute('/diesel-price', dieselPrice, { roles: ['Rate Maintainer'] });
 registerRoute('/vendors', vendors, { roles: ['Rate Maintainer'] });
 registerRoute('/review', review, { roles: ['Rate Maintainer'] });
 registerRoute('/approve', approve, { roles: ['Approver'] });
-registerRoute('/lookup', lookup, { roles: ['Rate Maintainer', 'Approver', 'Display', 'Administrator'] });
-registerRoute('/admin', admin, { roles: ['Administrator'] });
+registerRoute('/lookup', lookup, { roles: ['Rate Maintainer', 'Approver', 'Display'] });
+registerRoute('/admin', admin, { roles: ['Approver'] });
 registerRoute('/master-data-requests', changeRequests, { roles: ['Approver'] });
 
 startRouter();

@@ -1,5 +1,5 @@
 // Structural master data changes (see routes/changeRequests.js). Most are
-// raised by an Administrator and need a Rate Approver's sign-off; `direct`
+// raised by one Rate Approver and need another's sign-off; `direct`
 // kinds (new destinations and vehicle types) are the Rate Approver's own to
 // add, and take effect as soon as they're added. Each kind has a `validate`
 // (run when the request is raised, and again when it's approved, since
@@ -25,6 +25,31 @@ function parseRates(list, labels, code, fieldPrefix) {
     }
     return Math.round(n);
   });
+}
+
+// A rate list's transporters ("Rates applicable to") or conditions: one
+// per line (or an array), blank lines dropped.
+function parseLines(t) {
+  const list = Array.isArray(t) ? t : String(t ?? '').split('\n');
+  return list.map((s) => String(s).trim()).filter(Boolean);
+}
+
+const MAX_LINES = 40;
+const MAX_LINE_LENGTH = 600;
+
+// Conditions and transporters as edited on Rate lists & agreements.
+function parseListTerms(p) {
+  const conditions = parseLines(p.conditions);
+  const transporters = parseLines(p.transporters);
+  if (!transporters.length) {
+    throw fail('MD-016', 'A rate list needs at least one transporter under "Rates applicable to".', { field: 'Rates applicable to' });
+  }
+  for (const [items, label] of [[conditions, 'Conditions'], [transporters, 'Rates applicable to']]) {
+    if (items.length > MAX_LINES || items.some((s) => s.length > MAX_LINE_LENGTH)) {
+      throw fail('MD-017', `"${label}" can have at most ${MAX_LINES} lines of up to ${MAX_LINE_LENGTH} characters each.`, { field: label });
+    }
+  }
+  return { conditions, transporters };
 }
 
 function validateAgreementTerms(t, { partial = false } = {}) {
@@ -62,17 +87,17 @@ function findRow(sheet, destination) {
 const KINDS = {
   add_vendor: {
     validate(db, p) {
-      if (!p.name?.trim()) throw fail('MD-005', 'Enter the vendor name.', { field: 'Vendor name' });
+      if (!p.name?.trim()) throw fail('MD-005', 'Enter the rate list name.', { field: 'Rate list name' });
       if (db.vendors.some((v) => sameName(v.name, p.name))) {
-        throw fail('MD-014', `A vendor called "${p.name.trim()}" already exists.`, { status: 409, field: 'Vendor name' });
+        throw fail('MD-014', `A rate list called "${p.name.trim()}" already exists.`, { status: 409, field: 'Rate list name' });
       }
       validateAgreementTerms(p);
       checkValidityOrder(p.validityStart, p.validityEnd);
-      if (!p.firstDestination?.trim()) throw fail('MD-006', 'A new vendor needs a first destination.', { field: 'First destination' });
-      if (!p.firstVehicleType?.trim()) throw fail('MD-006', 'A new vendor needs a first vehicle type.', { field: 'First vehicle type' });
+      if (!p.firstDestination?.trim()) throw fail('MD-006', 'A new rate list needs a first destination.', { field: 'First destination' });
+      if (!p.firstVehicleType?.trim()) throw fail('MD-006', 'A new rate list needs a first vehicle type.', { field: 'First vehicle type' });
       parseRates([p.firstBaseRate], [p.firstVehicleType], 'MD-013', 'Base rate');
     },
-    summary: (db, p) => `Add vendor "${p.name.trim()}"`,
+    summary: (db, p) => `Add rate list "${p.name.trim()}"`,
     apply(db, p) {
       const id = 'V' + Date.now().toString(36).toUpperCase();
       const annexure = p.annexure?.trim() || '—';
@@ -85,6 +110,7 @@ const KINDS = {
         stale: false,
         validityStart: p.validityStart || null,
         validityEnd: p.validityEnd || null,
+        transporters: parseLines(p.transporters),
       });
       db.rateSheets[id] = {
         title: p.name.trim(),
@@ -92,6 +118,7 @@ const KINDS = {
         cols: [p.firstVehicleType.trim()],
         weights: [p.firstWeight?.trim() || '—'],
         rows: [[p.firstDestination.trim(), ...parseRates([p.firstBaseRate], [p.firstVehicleType], 'MD-013', 'Base rate')]],
+        conditions: [],
       };
       return id;
     },
@@ -103,7 +130,7 @@ const KINDS = {
       const { sheet } = sheetFor(db, p.vendorId);
       if (!p.destination?.trim()) throw fail('MD-007', 'Enter the destination name.', { field: 'Destination' });
       if (findRow(sheet, p.destination)) {
-        throw fail('MD-009', `"${p.destination.trim()}" is already on this vendor's rate sheet.`, { status: 409, field: 'Destination' });
+        throw fail('MD-009', `"${p.destination.trim()}" is already on this rate list.`, { status: 409, field: 'Destination' });
       }
       if (!Array.isArray(p.baseRates) || p.baseRates.length !== sheet.cols.length) {
         throw fail('MD-008', `Enter a base rate (or leave blank) for each of the ${sheet.cols.length} vehicle type(s).`, { field: 'Base rates' });
@@ -146,7 +173,7 @@ const KINDS = {
     validate(db, p) {
       vendorById(db, p.vendorId);
     },
-    summary: (db, p) => `Delete vendor ${vendorById(db, p.vendorId).name}`,
+    summary: (db, p) => `Delete rate list ${vendorById(db, p.vendorId).name}`,
     apply(db, p) {
       db.vendors = db.vendors.filter((v) => v.id !== p.vendorId);
       delete db.rateSheets[p.vendorId];
@@ -159,7 +186,7 @@ const KINDS = {
     validate(db, p) {
       const { sheet } = sheetFor(db, p.vendorId);
       if (!p.destination || !findRow(sheet, p.destination)) {
-        throw fail('MD-010', `"${p.destination}" is not on this vendor's rate sheet any more.`, { status: 404, field: 'Destination' });
+        throw fail('MD-010', `"${p.destination}" is not on this rate list any more.`, { status: 404, field: 'Destination' });
       }
     },
     summary: (db, p) => `Delete destination "${p.destination}" from ${vendorById(db, p.vendorId).name}`,
@@ -176,4 +203,4 @@ function kindSpec(kind) {
   return spec;
 }
 
-module.exports = { KINDS, kindSpec, ROUNDING_RULES, validateAgreementTerms, checkValidityOrder, parseRates, findRow };
+module.exports = { KINDS, kindSpec, ROUNDING_RULES, validateAgreementTerms, checkValidityOrder, parseRates, findRow, parseListTerms };

@@ -2,8 +2,8 @@
 -- history, and the pending-approval workflow. All idempotent (IF NOT
 -- EXISTS) so this can just run on every server start.
 --
--- Scoped to diesel-indexed per-trip freight rates for the five vendors
--- covered by the last revision — see the project's scope document. Flat
+-- Scoped to diesel-indexed per-trip freight rates, one rate sheet per
+-- rate list (see the note on `transporters` further down). Flat
 -- per-category rate cards and dedicated-vehicle contracts (found while
 -- reviewing the source Excel workbook) are explicitly out of scope and
 -- were removed after briefly existing here.
@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS alerts (
 
 -- Master data changes that need a Rate Approver's sign-off before they
 -- take effect: adding a vendor / destination / vehicle type, deleting a
--- vendor / destination. Raised by an Administrator; approving one applies
+-- vendor / destination. Raised by one Rate Approver; approving one (by another) applies
 -- it to vendors/rate_sheets in the same transaction. Written directly,
 -- never part of saveDb's wipe-and-reinsert.
 CREATE TABLE IF NOT EXISTS change_requests (
@@ -179,3 +179,54 @@ CREATE TABLE IF NOT EXISTS revision_drafts (
   data JSONB NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Several saved drafts per maintainer, not just one: each gets its own id.
+-- The old one-per-person key (employee_id) is dropped; existing drafts are
+-- kept and simply numbered.
+ALTER TABLE revision_drafts ADD COLUMN IF NOT EXISTS id SERIAL;
+ALTER TABLE revision_drafts DROP CONSTRAINT IF EXISTS revision_drafts_pkey;
+CREATE UNIQUE INDEX IF NOT EXISTS revision_drafts_id ON revision_drafts (id);
+CREATE INDEX IF NOT EXISTS revision_drafts_employee ON revision_drafts (employee_id);
+
+-- Each vendor's sheet is approved on its own now, so two vendors in the
+-- same revision can be released by different people on different days:
+-- who released this vendor's sheet, kept with its snapshot. Null for
+-- snapshots taken before this change (revisions.approved_by applies).
+ALTER TABLE rate_snapshots ADD COLUMN IF NOT EXISTS approved_by TEXT;
+ALTER TABLE rate_snapshots ADD COLUMN IF NOT EXISTS approved_on TEXT;
+
+-- Name and email as SuccessFactors had them at each person's last sign-in
+-- (see routes/auth.js) — where approval emails are sent when roles.js
+-- doesn't give an address.
+CREATE TABLE IF NOT EXISTS employees (
+  employee_id TEXT PRIMARY KEY,
+  name TEXT,
+  email TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Every approval email the portal sent (or tried to). Also how the
+-- reminder job knows when it last sent a reminder.
+CREATE TABLE IF NOT EXISTS email_log (
+  id SERIAL PRIMARY KEY,
+  kind TEXT NOT NULL,
+  recipients JSONB NOT NULL,
+  subject TEXT NOT NULL,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  error TEXT
+);
+
+-- Rate sheets are issued list-wise, not per vendor: one rate list (e.g.
+-- "PLG - AAG", 20 ft & 40 ft for BU-FP & FC) applies to several
+-- transporters, and one transporter can be on several lists. A `vendors`
+-- row (and its vendor_id everywhere else) is now one rate list; the
+-- transporters it applies to are listed on it, and each list's rate
+-- sheet ends with its own conditions. See server/rateLists.js.
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS transporters JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE rate_sheets ADD COLUMN IF NOT EXISTS conditions JSONB NOT NULL DEFAULT '[]';
+
+-- A list's conditions and transporters can be edited (Rate lists &
+-- agreements), so each revision keeps the ones that applied to it. Null
+-- for a snapshot taken before this: the list's current ones apply.
+ALTER TABLE rate_snapshots ADD COLUMN IF NOT EXISTS conditions JSONB;
+ALTER TABLE rate_snapshots ADD COLUMN IF NOT EXISTS transporters JSONB;

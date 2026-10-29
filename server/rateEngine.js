@@ -8,7 +8,7 @@ const { fail } = require('./errors');
 
 function vendorById(db, id) {
   const v = db.vendors.find((v) => v.id === id);
-  if (!v) throw fail('VND-003', `Vendor "${id}" was not found. It may have been deleted — reload the page and pick it again.`, { status: 404, field: 'Vendor' });
+  if (!v) throw fail('VND-003', `Rate list "${id}" was not found. It may have been deleted — reload the page and pick it again.`, { status: 404, field: 'Rate list' });
   return v;
 }
 
@@ -18,8 +18,7 @@ function trimNum(n, maxDecimals = 2) {
   return Number(n).toLocaleString('en-US', { maximumFractionDigits: maxDecimals, useGrouping: false });
 }
 
-// 0 for a vendor whose pricing_model isn't 'lane' (category / dedicated
-// vehicle) — those have no rate_sheets row at all.
+// 0 for a rate list with no rate_sheets row.
 function rateLineCount(db, vendorId) {
   const sheet = db.rateSheets[vendorId];
   if (!sheet) return 0;
@@ -63,7 +62,23 @@ function computeWorksheet(db, v, upliftPct, rowOverrides) {
     return { no: i + 1, dest: row[0], base, inc, sum, rounded, bal };
   });
   const blocked = rows.some((r) => r.bal.some((b) => b == null));
-  return { title: sheet.title, annexure: sheet.annexure, cols: sheet.cols, weights: sheet.weights, rows, blocked };
+  return {
+    title: sheet.title,
+    annexure: sheet.annexure,
+    transporters: v.transporters || [],
+    cols: sheet.cols,
+    weights: sheet.weights,
+    rows,
+    conditions: sheet.conditions || [],
+    blocked,
+  };
+}
+
+// Each submission is its own revision number, even while sheets from an
+// earlier one are still waiting for approval.
+function nextRevisionNo(db) {
+  const taken = [db.currentRevisionNo, ...Object.keys(db.revisions).map(Number), ...db.pendingSheets.map((s) => s.revisionNo)];
+  return Math.max(...taken) + 1;
 }
 
 function buildSimulation(db, { dieselPrice, effectiveDate, vendorIds, overrides }) {
@@ -83,7 +98,7 @@ function buildSimulation(db, { dieselPrice, effectiveDate, vendorIds, overrides 
   const rateLineTotal = vendorIds.reduce((sum, id) => sum + rateLineCount(db, id), 0);
 
   return {
-    revisionNo: db.currentRevisionNo + 1,
+    revisionNo: nextRevisionNo(db),
     effectiveDate,
     overallUpliftPct,
     vendors: vendors.map((v) => ({ ...v, blocked: worksheets[v.id].blocked })),
@@ -128,14 +143,45 @@ function revisionCoveringDate(db, dateStr) {
 // This vendor/destination/column's rate as it stood at `revNo`: the exact
 // archived figure if this revision has an rateSnapshots entry (every
 // revision approved through this app gets one), else the scalar-factor
-// approximation against today's master rate (only true for the two
-// pre-existing revisions seeded with no snapshot — see seedData.js).
+// approximation against today's master rate (only for revisions from
+// before this app that were loaded with a factor and no snapshot).
 function rateAtRevision(db, vendorId, destName, colIndex, revNo) {
   const snapshotRow = db.rateSnapshots[vendorId]?.[revNo]?.rows?.find((r) => r[0] === destName);
   if (snapshotRow) return snapshotRow[colIndex + 1];
   const currentRow = db.rateSheets[vendorId].rows.find((r) => r[0] === destName);
-  const currentRate = currentRow[colIndex + 1];
-  return currentRate == null ? null : roundByRule(currentRate * db.revisions[revNo].factor, 'Nearest 100');
+  return scaledRate(currentRow[colIndex + 1], db.revisions[revNo].factor);
+}
+
+// Today's rate as it stood in a revision with no snapshot. Factor 1 is
+// the revision the sheet's rates were issued in: those are the rates
+// exactly as published, never re-rounded.
+function scaledRate(rate, factor) {
+  if (rate == null || factor === 1) return rate;
+  return roundByRule(rate * factor, 'Nearest 100');
+}
+
+// A list's conditions and transporters as they stand, for a snapshot.
+function listTerms(db, vendorId) {
+  return {
+    conditions: [...(db.rateSheets[vendorId].conditions || [])],
+    transporters: [...(vendorById(db, vendorId).transporters || [])],
+  };
+}
+
+// Every earlier revision this list's sheet sat unchanged through (back to
+// its last archived one) gets the rows, conditions and transporters as
+// they are now, before a release (or an edit to the conditions) changes
+// them — so those revisions keep showing what really applied then. Stops
+// at revisions whose rates are a scalar approximation (factor ≠ 1), not
+// today's rows.
+function archiveEarlierRevisions(db, vendorId, revisionNo) {
+  const sheet = db.rateSheets[vendorId];
+  db.rateSnapshots[vendorId] = db.rateSnapshots[vendorId] || {};
+  const earlier = Object.keys(db.revisions).map(Number).filter((r) => r < revisionNo).sort((a, b) => b - a);
+  for (const r of earlier) {
+    if (db.rateSnapshots[vendorId][r] || db.revisions[r].factor !== 1) break;
+    db.rateSnapshots[vendorId][r] = { rows: sheet.rows.map((row) => [...row]), auditRows: null, ...listTerms(db, vendorId) };
+  }
 }
 
 // Local date, not toISOString()'s UTC one — which is still "yesterday"
@@ -150,6 +196,7 @@ module.exports = {
   rateLineCount,
   roundByRule,
   computeWorksheet,
+  nextRevisionNo,
   buildSimulation,
   parseDMY,
   isValidDMY,
@@ -157,5 +204,8 @@ module.exports = {
   subtractOneDay,
   revisionCoveringDate,
   rateAtRevision,
+  scaledRate,
+  listTerms,
+  archiveEarlierRevisions,
   today,
 };

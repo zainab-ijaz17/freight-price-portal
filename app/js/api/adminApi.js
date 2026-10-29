@@ -5,7 +5,7 @@ import { request } from './client.js';
 
 /**
  * Full vendor + agreement records for master-data maintenance
- * (Administrator only — same shape as vendorsApi.getVendors()).
+ * (Approver only — same shape as vendorsApi.getVendors()).
  *
  * Real endpoint: GET {API_BASE_URL}/admin/vendors
  */
@@ -27,12 +27,24 @@ export async function updateAgreement(vendorId, patch) {
 }
 
 /**
- * A vendor's live rate sheet, so the Administrator and Rate Approver
- * screens can show which destinations/vehicle types already exist
- * (Administrator or Approver).
+ * Saves a rate list's conditions (printed at the end of its sheet; write
+ * {dieselPrice} where the revision's diesel price goes) and the
+ * transporters it applies to (Approver).
+ *
+ * Real endpoint: PUT {API_BASE_URL}/admin/vendors/{vendorId}/list-terms
+ * Request:  { conditions: string[], transporters: string[] }
+ * Response: the saved { conditions, transporters }
+ */
+export async function updateListTerms(vendorId, terms) {
+  return request(`/admin/vendors/${vendorId}/list-terms`, { method: 'PUT', body: terms });
+}
+
+/**
+ * A vendor's live rate sheet, so the Rate Approver's screens can show
+ * which destinations/vehicle types already exist (Approver).
  *
  * Real endpoint: GET {API_BASE_URL}/admin/vendors/{vendorId}/rate-sheet
- * Response: { title, annexure, cols: string[], weights: string[], rows: [[dest, ...rates]] }
+ * Response: { title, annexure, cols: string[], weights: string[], rows: [[dest, ...rates]], conditions: string[] }
  */
 export async function getRateSheet(vendorId) {
   return request(`/admin/vendors/${vendorId}/rate-sheet`);

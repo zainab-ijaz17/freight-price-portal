@@ -1,6 +1,6 @@
-// Master data change requests: an Administrator proposes adding a vendor
-// or deleting a vendor or destination; a Rate Approver (never the same
-// person) approves or rejects it, and nothing changes until it's approved.
+// Master data change requests: a Rate Approver proposes adding a vendor
+// or deleting a vendor or destination; another Rate Approver (never the
+// same person) approves or rejects it, and nothing changes until it's approved.
 // New destinations and vehicle types (`direct` kinds) are added by a Rate
 // Approver, applied at once and recorded here with status 'applied'. See app/js/api/changeRequestsApi.js.
 const express = require('express');
@@ -10,6 +10,7 @@ const { requireActor, requireRole } = require('../middleware/auth');
 const { kindSpec } = require('../masterData');
 const { fail, handle } = require('../errors');
 const { createAlert } = require('../alerts');
+const { emailChangeRequestRaised } = require('../approvalEmails');
 
 const router = express.Router();
 
@@ -30,28 +31,31 @@ function toApi(r) {
   };
 }
 
-// Pending revisions line their worksheet up with the rate sheet by
-// row/column position — changing that sheet's shape now would release
+// A pending rate sheet lines its worksheet up with the vendor's rate sheet
+// by row/column position — changing that sheet's shape now would release
 // rates against the wrong lines.
 function assertSheetNotInPendingRevision(db, vendorId) {
-  if (vendorId && db.pendingRevision?.vendorIds.includes(vendorId)) {
-    throw fail('CR-003', `This vendor is part of revision ${db.pendingRevision.revisionNo}, which is waiting for approval. Release, reject or return that revision first, then make this change.`, { status: 409 });
+  const waiting = vendorId && db.pendingSheets.find((s) => s.vendorId === vendorId);
+  if (waiting) {
+    throw fail('CR-003', `This rate list's sheet is waiting for approval in revision ${waiting.revisionNo}. Approve, reject or return that sheet first, then make this change.`, { status: 409 });
   }
 }
 
-// A returned revision's typed-in rates are also keyed by position; drop
-// them for this vendor rather than let them land on the wrong line when
-// it's reopened (the maintainer re-types them at review).
+// A returned sheet's typed-in rates are also keyed by position; drop them
+// rather than let them land on the wrong line when it's reopened (the
+// maintainer re-types them at review). A deleted vendor's returned sheet
+// goes altogether.
 function dropReturnedOverrides(db, kind, vendorId) {
-  const returned = db.returnedRevision?.draft;
-  if (returned && vendorId) {
-    delete returned.overrides?.[vendorId];
-    if (kind === 'delete_vendor') returned.vendorIds = returned.vendorIds.filter((v) => v !== vendorId);
+  if (!vendorId) return;
+  if (kind === 'delete_vendor') {
+    db.returnedSheets = db.returnedSheets.filter((r) => r.vendorId !== vendorId);
+    return;
   }
+  db.returnedSheets.filter((r) => r.vendorId === vendorId).forEach((r) => { r.draft.overrides = {}; });
 }
 
 // GET /master-data/requests?status=pending
-router.get('/master-data/requests', requireActor, requireRole('Administrator', 'Approver'), handle('loading master data requests', async (req, res) => {
+router.get('/master-data/requests', requireActor, requireRole('Approver'), handle('loading master data requests', async (req, res) => {
   const { status } = req.query;
   const result = status
     ? await pool.query('SELECT * FROM change_requests WHERE status = $1 ORDER BY requested_at DESC LIMIT 200', [status])
@@ -60,13 +64,9 @@ router.get('/master-data/requests', requireActor, requireRole('Administrator', '
 }));
 
 // POST /master-data/requests  { kind, payload, reason }
-router.post('/master-data/requests', requireActor, requireRole('Administrator', 'Approver'), handle('raising the master data request', async (req, res) => {
+router.post('/master-data/requests', requireActor, requireRole('Approver'), handle('raising the master data request', async (req, res) => {
   const { kind, payload = {}, reason } = req.body || {};
   const spec = kindSpec(kind);
-  const raisedBy = spec.direct ? 'Approver' : 'Administrator';
-  if (req.actor.role !== raisedBy) {
-    throw fail('AUTH-005', `This action needs the ${raisedBy} role. You are signed in as ${req.actor.role}.`, { status: 403 });
-  }
   if (spec.needsReason && !reason?.trim()) {
     throw fail('CR-004', 'Enter a reason for the deletion — the approver needs it to decide.', { field: 'Reason' });
   }
@@ -107,6 +107,7 @@ router.post('/master-data/requests', requireActor, requireRole('Administrator', 
     });
     return rows[0];
   });
+  emailChangeRequestRaised({ id: created.id, summary: created.summary, reason: created.reason, requestedBy: req.actor });
   res.json(toApi(created));
 }));
 

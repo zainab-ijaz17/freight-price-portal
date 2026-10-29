@@ -193,3 +193,55 @@ input[type=checkbox] { accent-color: var(--color-accent); width: 15px; height: 1
 .end { display: flex; justify-content: flex-end; gap: 9px; }
 
 [hidden] { display: none !important; }
+
+/* — current diesel price, top of each home screen — */
+#home-banner { margin-bottom: 24px; }
+.diesel-card {
+  display: flex; flex-wrap: wrap; gap: 14px 40px; align-items: flex-end;
+  padding: 14px 18px; border-radius: var(--radius-md);
+  background: var(--color-surface); box-shadow: var(--shadow-sm);
+  border-left: 3px solid var(--color-accent);
+}
+.diesel-card .hd { margin-bottom: 3px; }
+.diesel-card-price { font-size: 26px; line-height: 1.1; }
+.diesel-card-unit { font-size: 13px; color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+.diesel-card-value { font-size: 14px; }
+
+/* — approval queue: selectable rows, one focused — */
+.queue-row { cursor: pointer; }
+.queue-row:hover td { background: color-mix(in srgb, var(--color-text) 4%, transparent); }
+.queue-row.focused td { background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
+
+/* — saved drafts / returned sheets lists on "Enter diesel price" — */
+.list-card { padding: 12px 14px; }
+.list-card + .list-card { margin-top: 8px; }
+
+/* — printable sheets (components/printSheet.js) — */
+#print-root { display: none; }
+.print-doc { font-family: Arial, Helvetica, sans-serif; font-size: 9.5pt; color: #000; background: #fff; }
+.print-sheet + .print-sheet { break-before: page; }
+.print-org { font-size: 8.5pt; color: #444; letter-spacing: .04em; text-transform: uppercase; }
+.print-title { font-size: 15pt; font-weight: 700; margin: 2px 0 0; color: #000; font-family: inherit; }
+.print-subtitle { font-size: 10.5pt; margin-top: 2px; }
+.print-meta { margin: 8px 0 10px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 24px; font-size: 9pt; }
+.print-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.print-table th, .print-table td { border: 1px solid #999; padding: 3px 5px; text-align: left; vertical-align: top; color: #000; }
+.print-table th { background: #e9e9e9; font-weight: 700; font-size: 8.5pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.print-table td { font-variant-numeric: tabular-nums; }
+.print-table tr { break-inside: avoid; }
+.print-terms { margin-top: 10px; font-size: 8.5pt; }
+.print-terms ol { margin: 4px 0 0; padding-left: 18px; }
+.print-terms li { break-inside: avoid; }
+.print-signatures { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 34px; break-inside: avoid; }
+.print-signature { flex: 1; min-width: 150px; font-size: 9pt; line-height: 1.5; }
+.print-signature-line { border-bottom: 1px solid #000; height: 34px; margin-bottom: 4px; }
+.print-footer { margin-top: 14px; font-size: 8pt; color: #555; }
+
+@media print {
+  @page { size: A4 landscape; margin: 10mm; }
+  html, body { background: #fff !important; }
+  body.printing > *:not(#print-root) { display: none !important; }
+  body.printing #print-root { display: block; }
+  /* Printing a screen directly (Ctrl+P) rather than a sheet: drop the app chrome. */
+  .sidebar, .topbar, #toast-root, #dialog-root, .btn { display: none !important; }
+}

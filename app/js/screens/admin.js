@@ -3,10 +3,10 @@ import { listRequests } from '../api/changeRequestsApi.js';
 import { wireRequestDialog } from '../components/sheetAddDialogs.js';
 import {
   withAsyncState, escapeHtml, toast, toastError, openDialog, closeDialog, trimNum, formatDateTime,
-  isValidDisplayDate, dateField, wireDateFields, codedError, showInlineError, errorBanner,
+  isValidDisplayDate, dateField, wireDateFields, codedError, showInlineError, errorBanner, personLabel,
 } from '../ui.js';
 
-export const title = 'Master Data';
+export const title = 'Rate Lists & Agreements';
 
 const ROUNDING_RULES = ['Nearest 100', 'Nearest 50', 'None'];
 const STATUS_TAG = { pending: 'tag-warning', approved: 'tag-positive', applied: 'tag-positive', rejected: 'tag-negative' };
@@ -21,7 +21,7 @@ export function mount(container) {
 function load(container, keepVendorId) {
   const loader = () => Promise.all([adminApi.getVendors(), listRequests()]);
   withAsyncState(container, loader, ([vendors, requests]) => render(container, vendors, requests, keepVendorId), {
-    loadingLabel: 'Loading vendors and agreements…',
+    loadingLabel: 'Loading rate lists and agreements…',
   });
 }
 
@@ -32,16 +32,16 @@ function pendingFor(requests, kind, match) {
 function render(container, vendors, requests, keepVendorId) {
   container.innerHTML = `
     <div class="screen-medium">
-      <h3 style="margin-bottom:3px">Master data</h3>
-      <p class="muted" style="font-size:13px">Agreement terms and base rates save as you edit. New vendors and deletions are sent to a Rate Approver and only take effect once approved. New destinations and vehicle types are added by the Rate Approver.</p>
+      <h3 style="margin-bottom:3px">Rate lists &amp; agreements</h3>
+      <p class="muted" style="font-size:13px">Agreement terms and base rates save as you edit. New rate lists and deletions you request here go to another Rate Approver and only take effect once they approve them. New destinations and vehicle types are added under "Master data requests".</p>
 
       <div class="spread" style="margin-top:20px">
-        <div class="hd">Vendors &amp; agreements</div>
-        <button class="btn btn-secondary" id="add-vendor-btn">Request new vendor</button>
+        <div class="hd">Rate lists &amp; agreements</div>
+        <button class="btn btn-secondary" id="add-vendor-btn">Request new rate list</button>
       </div>
       <table class="table" style="margin-top:10px">
         <thead><tr>
-          <th>Vendor</th><th>Annexure</th>
+          <th>Rate list</th><th>Annexure</th>
           <th style="text-align:right">Pass-through %</th><th>Rounding rule</th>
           <th>Valid from</th><th>Valid to</th>
           <th style="text-align:right">Rate lines</th><th style="text-align:right">Last revised</th><th></th>
@@ -51,7 +51,7 @@ function render(container, vendors, requests, keepVendorId) {
 
       <div class="hd" style="margin-top:34px">Destinations &amp; vehicle types</div>
       <div class="field" style="width:280px;margin-top:10px">
-        <label for="sheet-vendor">Vendor</label>
+        <label for="sheet-vendor">Rate list</label>
         <select class="input" id="sheet-vendor">${vendors.map((v) => `<option value="${v.id}" ${v.id === keepVendorId ? 'selected' : ''}>${escapeHtml(v.name)}</option>`).join('')}</select>
       </div>
       <div id="sheet-body" style="margin-top:16px"></div>
@@ -70,7 +70,7 @@ function render(container, vendors, requests, keepVendorId) {
     const pendingDelete = pendingFor(requests, 'delete_vendor', (p) => p.vendorId === v.id);
     return `
       <tr data-id="${v.id}">
-        <td>${escapeHtml(v.name)}</td>
+        <td>${escapeHtml(v.name)}${v.transporters?.length ? `<div class="muted" style="font-size:12px">${escapeHtml(v.transporters.join(' · '))}</div>` : ''}</td>
         <td class="num">${escapeHtml(v.annexure)}</td>
         <td style="text-align:right"><input class="cell-in num" style="text-align:right;width:70px" type="number" min="0" max="100" step="0.01" value="${trimNum(v.passThroughPct)}" data-field="passThroughPct"></td>
         <td>
@@ -129,7 +129,7 @@ function render(container, vendors, requests, keepVendorId) {
     const v = vendors.find((x) => x.id === id);
     openDeleteDialog({
       title: `Request deletion of ${v.name}`,
-      body: `Removes the vendor and its rate sheet (${v.rateLineCount} rate lines) from the portal once a Rate Approver approves it. Past revisions stay on record.`,
+      body: `Removes the rate list (${v.rateLineCount} rate lines) from the portal once another Rate Approver approves it. Past revisions stay on record.`,
       kind: 'delete_vendor',
       payload: { vendorId: id },
       onDone: reload,
@@ -144,13 +144,14 @@ function render(container, vendors, requests, keepVendorId) {
     try {
       const sheet = await adminApi.getRateSheet(vendorId);
       renderSheet(sheetBody, vendorId, sheet, requests, reload, loadSheet);
+      renderListTerms(sheetBody, vendors.find((v) => v.id === vendorId), sheet, reload);
     } catch (err) {
       sheetBody.innerHTML = errorBanner(err, 'Could not load rate sheet.');
     }
   }
   sheetVendorSelect.addEventListener('change', loadSheet);
   if (vendors.length) loadSheet();
-  else sheetBody.innerHTML = '<p class="muted">No vendors yet.</p>';
+  else sheetBody.innerHTML = '<p class="muted">No rate lists yet.</p>';
 
   renderRequestList(container.querySelector('#request-list'), requests, vendors);
 }
@@ -215,11 +216,52 @@ function renderSheet(container, vendorId, sheet, requests, reload, reloadSheet) 
     const destination = e.target.closest('tr').dataset.dest;
     openDeleteDialog({
       title: `Request deletion of "${destination}"`,
-      body: `Removes this destination and its ${sheet.cols.length} rate(s) from ${escapeHtml(sheet.title)} once a Rate Approver approves it. Past revisions stay on record.`,
+      body: `Removes this destination and its ${sheet.cols.length} rate(s) from ${escapeHtml(sheet.title)} once another Rate Approver approves it. Past revisions stay on record.`,
       kind: 'delete_destination',
       payload: { vendorId, destination },
       onDone: reload,
     });
+  });
+}
+
+// The list's conditions (end of its printed sheet) and "Rates applicable
+// to", edited as one line each and saved together.
+function renderListTerms(container, vendor, sheet, reload) {
+  const lines = (items) => escapeHtml((items || []).join('\n'));
+  const height = (items) => Math.min(16, Math.max(4, (items || []).length + 2));
+  container.insertAdjacentHTML('beforeend', `
+    <div style="max-width:980px;margin-top:28px">
+      <div class="hd">Conditions &amp; rates applicable to</div>
+      <p class="muted" style="font-size:12.5px;margin:4px 0 12px">Printed at the end of this list's sheet, one per line, in this order. Write <span class="num">{dieselPrice}</span> where the revision's diesel price goes — each sheet fills in its own. Earlier revisions keep the conditions they were issued with.</p>
+      <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px">
+        <div class="field"><label for="lt-conditions">Conditions</label><textarea class="input" id="lt-conditions" rows="${height(sheet.conditions)}">${lines(sheet.conditions)}</textarea></div>
+        <div class="field"><label for="lt-transporters">Rates applicable to</label><textarea class="input" id="lt-transporters" rows="${height(vendor.transporters)}">${lines(vendor.transporters)}</textarea></div>
+      </div>
+      <div id="lt-error" class="inline-error" hidden></div>
+      <div class="end" style="justify-content:flex-start;margin-top:10px">
+        <button class="btn btn-primary" id="lt-save">Save conditions</button>
+      </div>
+    </div>
+  `);
+  const saveBtn = container.querySelector('#lt-save');
+  const errorEl = container.querySelector('#lt-error');
+  saveBtn.addEventListener('click', async () => {
+    const split = (id) => container.querySelector(id).value.split('\n').map((s) => s.trim()).filter(Boolean);
+    const transporters = split('#lt-transporters');
+    errorEl.hidden = true;
+    if (!transporters.length) {
+      showInlineError(errorEl, codedError('MD-016', 'A rate list needs at least one transporter under "Rates applicable to".', 'Rates applicable to'));
+      return;
+    }
+    saveBtn.disabled = true;
+    try {
+      await adminApi.updateListTerms(vendor.id, { conditions: split('#lt-conditions'), transporters });
+      toast('Conditions saved.', 'success');
+      reload();
+    } catch (err) {
+      showInlineError(errorEl, err, 'Could not save the conditions.');
+      saveBtn.disabled = false;
+    }
   });
 }
 
@@ -236,9 +278,9 @@ function renderRequestList(container, requests, vendors) {
           <tr>
             <td class="num">${r.id}</td>
             <td>${escapeHtml(r.summary)}${r.reason ? `<div class="muted" style="font-size:12px">Reason: ${escapeHtml(r.reason)}</div>` : ''}</td>
-            <td class="num" style="white-space:nowrap">${escapeHtml(formatDateTime(r.requestedAt))}<div class="muted" style="font-size:12px">${escapeHtml(r.requestedBy?.name || '')}</div></td>
+            <td class="num" style="white-space:nowrap">${escapeHtml(formatDateTime(r.requestedAt))}<div class="muted" style="font-size:12px">${escapeHtml(personLabel(r.requestedBy))}</div></td>
             <td><span class="tag ${STATUS_TAG[r.status] || 'tag-neutral'}">${escapeHtml(STATUS_LABEL[r.status] || r.status)}</span></td>
-            <td style="font-size:12.5px">${r.decidedAt ? `${escapeHtml(r.decidedBy?.name || '')} · <span class="num">${escapeHtml(formatDateTime(r.decidedAt))}</span>${r.decisionNote ? `<div class="muted">${escapeHtml(r.decisionNote)}</div>` : ''}` : '<span class="muted">—</span>'}</td>
+            <td style="font-size:12.5px">${r.decidedAt ? `${escapeHtml(personLabel(r.decidedBy))} · <span class="num">${escapeHtml(formatDateTime(r.decidedAt))}</span>${r.decisionNote ? `<div class="muted">${escapeHtml(r.decisionNote)}</div>` : ''}` : '<span class="muted">—</span>'}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -246,14 +288,14 @@ function renderRequestList(container, requests, vendors) {
   `;
 }
 
-const APPROVAL_NOTE = '<div class="dialog-body" style="font-size:12.5px;opacity:.7">This is sent to a Rate Approver. Nothing changes until they approve it; you will be notified either way.</div>';
+const APPROVAL_NOTE = '<div class="dialog-body" style="font-size:12.5px;opacity:.7">This is sent to another Rate Approver (you cannot decide your own request). Nothing changes until they approve it; you will be notified either way.</div>';
 
 function openAddVendorDialog(onDone) {
   openDialog(`
-    <div class="dialog-title">Request new vendor</div>
+    <div class="dialog-title">Request new rate list</div>
     ${APPROVAL_NOTE}
     <div class="grid-2">
-      <div class="field"><label for="av-name">Vendor name</label><input class="input" id="av-name"></div>
+      <div class="field"><label for="av-name">Rate list name</label><input class="input" id="av-name" placeholder="e.g. PLG - AAG"></div>
       <div class="field"><label for="av-annexure">Annexure reference</label><input class="input" id="av-annexure" placeholder="e.g. B/11"></div>
       <div class="field"><label for="av-pass">Pass-through %</label><input class="input num" id="av-pass" type="number" min="0" max="100" step="0.01" value="40"></div>
       <div class="field"><label for="av-round">Rounding rule</label>
@@ -266,6 +308,7 @@ function openAddVendorDialog(onDone) {
       <div class="field"><label for="av-weight">Payload / weight</label><input class="input" id="av-weight" placeholder="e.g. 20 Ton"></div>
       <div class="field"><label for="av-rate">Base rate (PKR) <span class="muted">· optional</span></label><input class="input num" id="av-rate" type="number" min="0" step="1"></div>
     </div>
+    <div class="field"><label for="av-transporters">Rates applicable to <span class="muted">· one transporter per line</span></label><textarea class="input" id="av-transporters" rows="3"></textarea></div>
     <div id="av-error" class="inline-error" hidden></div>
     <div class="dialog-actions">
       <button class="btn btn-secondary" id="dlg-cancel">Cancel</button>
@@ -277,7 +320,7 @@ function openAddVendorDialog(onDone) {
     kind: 'add_vendor',
     errorId: 'av-error',
     onDone,
-    successText: 'The vendor appears here once approved.',
+    successText: 'The rate list appears here once approved.',
     collect() {
       for (const [id, label] of [['av-valid-from', 'Valid from'], ['av-valid-to', 'Valid to']]) {
         if (val(id) && !isValidDisplayDate(val(id))) throw codedError('MD-003', `Enter "${label}" as DD.MM.YYYY.`, label);
@@ -294,6 +337,7 @@ function openAddVendorDialog(onDone) {
           firstVehicleType: val('av-vehicle'),
           firstWeight: val('av-weight'),
           firstBaseRate: val('av-rate'),
+          transporters: val('av-transporters'),
         },
       };
     },

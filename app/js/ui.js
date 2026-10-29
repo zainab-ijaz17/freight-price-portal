@@ -20,6 +20,12 @@ export function priceStr(n) {
   return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 }
 
+// A rate list's conditions, with {dieselPrice} ("based on PSO Fuel Price
+// @ PKR {dieselPrice}") filled in with the price the sheet is shown for.
+export function fillConditions(conditions, dieselPrice) {
+  return (conditions || []).map((c) => c.split('{dieselPrice}').join(priceStr(dieselPrice)));
+}
+
 export function pct(n, decimals = 2) {
   const sign = n > 0 ? '+' : '';
   return `${sign}${n.toFixed(decimals)}%`;
@@ -28,6 +34,14 @@ export function pct(n, decimals = 2) {
 // A plain figure with no padding zeros: 40, 37.5.
 export function trimNum(n, maxDecimals = 2) {
   return Number(n).toLocaleString('en-US', { maximumFractionDigits: maxDecimals, useGrouping: false });
+}
+
+// "Imran Nisar (20005702)" for a { employeeId, name } — or just the
+// number when no name is known for them.
+export function personLabel(p) {
+  if (!p) return '';
+  if (!p.employeeId) return p.name || '';
+  return p.name && p.name !== p.employeeId ? `${p.name} (${p.employeeId})` : p.employeeId;
 }
 
 export function initials(name) {
